@@ -1,15 +1,25 @@
 package com.jiaruiblog.quickboxserver.controller;
 
 import com.jiaruiblog.quickboxserver.common.ApiResult;
+import com.jiaruiblog.quickboxserver.model.dto.FileInfo;
 import com.jiaruiblog.quickboxserver.model.request.ChunkUploadRequest;
-import com.jiaruiblog.quickboxserver.model.request.FileCheckRequest;
 import com.jiaruiblog.quickboxserver.model.response.FileCheckResult;
 import com.jiaruiblog.quickboxserver.model.response.UploadProgress;
 import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import com.jiaruiblog.quickboxserver.service.FileUploadService;
 import jakarta.annotation.Resource;
+
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @RestController
 @RequestMapping("/api/upload")
@@ -51,8 +61,7 @@ public class FileUploadController {
     @GetMapping("/chunkCheck")
     public ApiResult<Boolean> checkChunk(
             @RequestParam String identifier,
-            @RequestParam Integer chunkNumber,
-            @RequestParam(required = false) Long chunkSize) {
+            @RequestParam Integer chunkNumber) {
         UploadProgress progress = uploadService.getUploadProgress(identifier, chunkNumber);
         // 返回该分片是否已上传
         boolean exists = progress.uploadedChunkNumbers().contains(chunkNumber);
@@ -64,21 +73,17 @@ public class FileUploadController {
      */
     @PostMapping("/upload")
     public ApiResult<UploadProgress> uploadChunk(
-            @RequestParam String identifier,
+            @RequestParam String accessCode,
             @RequestParam Integer chunkNumber,
-            @RequestParam(required = false) Long chunkSize,
-            @RequestParam(required = false) Long currentChunkSize,
-            @RequestParam(required = false) Integer totalChunks,
-            @RequestParam(required = false) Long totalSize,
             @RequestParam("file") MultipartFile file) {
-        
+
         ChunkUploadRequest request = new ChunkUploadRequest(
-                identifier,
+                accessCode,
                 chunkNumber,
-                chunkSize,
-                currentChunkSize,
-                totalChunks,
-                totalSize,
+                null,  // Optional fields can be null
+                null,
+                null,
+                null,
                 file.getOriginalFilename(),
                 null,
                 file.getContentType()
@@ -93,13 +98,8 @@ public class FileUploadController {
      */
     @PostMapping("/merge")
     public ApiResult<String> mergeChunks(
-            @RequestParam String identifier,
-            @RequestParam String filename,
-            @RequestParam(required = false) Integer totalChunks,
-            @RequestParam(required = false) Long totalSize) {
-        
-        String fileUrl = uploadService.mergeChunks(identifier);
-        return ApiResult.success(fileUrl);
+            @RequestParam String accessCode) {  // Simplified parameters
+        return ApiResult.success(uploadService.mergeChunks(accessCode));
     }
 
     /**
@@ -107,8 +107,32 @@ public class FileUploadController {
      */
     @GetMapping("/progress")
     public ApiResult<UploadProgress> getProgress(
-            @RequestParam String identifier) {
-        UploadProgress progress = uploadService.getUploadProgress(identifier, null);
-        return ApiResult.success(progress);
+            @RequestParam String accessCode) {  // Changed from identifier
+        return ApiResult.success(uploadService.getUploadProgress(accessCode, null));
+    }
+
+    /**
+     * Get file information by access code
+     */
+    @GetMapping("/info/{accessCode}")
+    public ApiResult<FileInfo> getFileInfo(@PathVariable String accessCode) {
+        return ApiResult.success(uploadService.getFileInfo(accessCode));
+    }
+
+    /**
+     * Download file by access code
+     */
+    @GetMapping("/download/{accessCode}")
+    public ResponseEntity<Resource> downloadFile(@PathVariable String accessCode) throws IOException {
+        File file = uploadService.getFileByAccessCode(accessCode);
+        Path path = file.toPath();
+        Resource resource = (Resource) new InputStreamResource(Files.newInputStream(path));
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + file.getName() + "\"")
+                .contentLength(file.length())
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(resource);
     }
 }

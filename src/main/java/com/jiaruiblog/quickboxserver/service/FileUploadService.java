@@ -1,12 +1,13 @@
 package com.jiaruiblog.quickboxserver.service;
 
+import com.jiaruiblog.quickboxserver.model.dto.FileInfo;
 import com.jiaruiblog.quickboxserver.model.request.ChunkUploadRequest;
-import com.jiaruiblog.quickboxserver.model.request.FileCheckRequest;
 import com.jiaruiblog.quickboxserver.model.response.FileCheckResult;
 import com.jiaruiblog.quickboxserver.model.response.UploadProgress;
 import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
 import java.time.LocalDateTime;
 
 public interface FileUploadService {
@@ -56,4 +57,8 @@ public interface FileUploadService {
      * @param before 清理指定时间之前的会话
      */
     void cleanupExpiredSessions(LocalDateTime before);
+
+    File getFileByAccessCode(String accessCode);
+
+    FileInfo getFileInfo(String accessCode);
 }
