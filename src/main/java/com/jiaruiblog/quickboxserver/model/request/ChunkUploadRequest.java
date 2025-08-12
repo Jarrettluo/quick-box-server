@@ -1,27 +1,21 @@
 package com.jiaruiblog.quickboxserver.model.request;
 
-public class ChunkUploadRequest {
-    // 文件唯一标识（MD5或UUID）
-    private String fileId;
-    // 当前分片序号（从1开始）
-    private Integer chunkNumber;
-    // 分片大小（字节）
-    private Long chunkSize;
-    // 当前分片大小（可能最后一个分片较小）
-    private Long currentChunkSize;
-    // 总分片数
-    private Integer totalChunks;
-    // 文件总大小
-    private Long totalSize;
-    // 文件名
-    private String filename;
-    // 相对路径
-    private String relativePath;
-    // 文件类型
-    private String contentType;
+import org.springframework.web.multipart.MultipartFile;
 
-    // 文件整体MD5
-    private String fileMd5;
-    // 当前分片的MD5
-    private String chunkMd5;
+public record ChunkUploadRequest(
+    String identifier,       // 文件唯一标识（对应vue-simple-uploader的identifier）
+    Integer chunkNumber,     // 当前分片序号
+    Long chunkSize,          // 分片大小
+    Long currentChunkSize,   // 当前分片实际大小
+    Integer totalChunks,     // 总分片数
+    Long totalSize,          // 文件总大小
+    String filename,         // 文件名
+    String relativePath,     // 相对路径（可选）
+    String contentType       // 文件类型
+) {
+    // 可以添加便捷方法
+    public boolean isLastChunk() {
+        return chunkNumber != null && totalChunks != null 
+               && chunkNumber.equals(totalChunks);
+    }
 }

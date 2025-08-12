@@ -16,63 +16,99 @@ import org.springframework.web.multipart.MultipartFile;
 public class FileUploadController {
 
     @Resource
-    FileUploadService uploadService;
+    private FileUploadService uploadService;
 
     /**
-     * 文件上传前检查（包含去重检查）
+     * 文件上传前检查（适配vue-simple-uploader的秒传验证）
      */
-    @PostMapping("/prepare")
-    public ApiResult<FileCheckResult> prepareUpload(@RequestBody FileCheckRequest request) {
+    @GetMapping("/verify")
+    public ApiResult<FileCheckResult> verifyFile(
+            @RequestParam String identifier, // 对应vue-simple-uploader的identifier参数
+            @RequestParam String filename,
+            @RequestParam long size) {
         FileCheckResult result = uploadService.prepareUpload(
-                request.fileMd5(),
-                request.filename(),
-                request.fileSize()
+                identifier,
+                filename,
+                size
         );
         return ApiResult.success(result);
     }
 
     /**
-     * 初始化分片上传（创建分片存储路径）
+     * 初始化上传（适配vue-simple-uploader）
      */
     @PostMapping("/init")
-    public ApiResult<UploadSession> initChunkUpload(
-            @RequestParam String fileMd5,
+    public ApiResult<UploadSession> initUpload(
+            @RequestParam String identifier,
             @RequestParam String filename) {
-        UploadSession session = uploadService.initUploadSession(fileMd5, filename);
+        UploadSession session = uploadService.initUploadSession(identifier, filename);
         return ApiResult.success(session);
     }
 
-    // 原有检查接口增强（返回分片存储路径）
-    @GetMapping("/check")
-    public ApiResult<UploadProgress> checkChunk(
-            @RequestParam String uploadId, // 改为使用uploadId
-            @RequestParam(required = false) Integer chunkNumber) {
-        UploadProgress progress = uploadService.getUploadProgress(uploadId, chunkNumber);
-        return ApiResult.success(progress);
+    /**
+     * 检查分片上传状态（适配vue-simple-uploader的chunkCheck接口）
+     */
+    @GetMapping("/chunkCheck")
+    public ApiResult<Boolean> checkChunk(
+            @RequestParam String identifier,
+            @RequestParam Integer chunkNumber,
+            @RequestParam(required = false) Long chunkSize) {
+        UploadProgress progress = uploadService.getUploadProgress(identifier, chunkNumber);
+        // 返回该分片是否已上传
+        boolean exists = progress.uploadedChunkNumbers().contains(chunkNumber);
+        return ApiResult.success(exists);
     }
 
     /**
-     * 上传文件分片
-     * @param request 分片上传请求信息
-     * @param file 分片文件
-     * @return 上传进度信息
+     * 上传分片（适配vue-simple-uploader的upload接口）
      */
-    @PostMapping("/chunk")
+    @PostMapping("/upload")
     public ApiResult<UploadProgress> uploadChunk(
-            @ModelAttribute ChunkUploadRequest request,
+            @RequestParam String identifier,
+            @RequestParam Integer chunkNumber,
+            @RequestParam(required = false) Long chunkSize,
+            @RequestParam(required = false) Long currentChunkSize,
+            @RequestParam(required = false) Integer totalChunks,
+            @RequestParam(required = false) Long totalSize,
             @RequestParam("file") MultipartFile file) {
+        
+        ChunkUploadRequest request = new ChunkUploadRequest(
+                identifier,
+                chunkNumber,
+                chunkSize,
+                currentChunkSize,
+                totalChunks,
+                totalSize,
+                file.getOriginalFilename(),
+                null,
+                file.getContentType()
+        );
+        
         UploadProgress progress = uploadService.uploadChunk(request, file);
         return ApiResult.success(progress);
     }
 
     /**
-     * 合并文件分片
-     * @param fileId 文件唯一标识
-     * @return 文件访问URL
+     * 合并分片（适配vue-simple-uploader的merge接口）
      */
     @PostMapping("/merge")
-    public ApiResult<String> mergeChunks(@RequestParam String fileId) {
-        String fileUrl = uploadService.mergeChunks(fileId);
+    public ApiResult<String> mergeChunks(
+            @RequestParam String identifier,
+            @RequestParam String filename,
+            @RequestParam(required = false) Integer totalChunks,
+            @RequestParam(required = false) Long totalSize) {
+        
+        String fileUrl = uploadService.mergeChunks(identifier);
         return ApiResult.success(fileUrl);
+    }
+
+    /**
+     * 获取上传进度（可选，用于前端展示）
+     */
+    @GetMapping("/progress")
+    public ApiResult<UploadProgress> getProgress(
+            @RequestParam String identifier) {
+        UploadProgress progress = uploadService.getUploadProgress(identifier, null);
+        return ApiResult.success(progress);
     }
 }
