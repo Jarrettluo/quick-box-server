@@ -3,7 +3,6 @@ package com.jiaruiblog.quickboxserver.controller;
 import com.jiaruiblog.quickboxserver.common.ApiResult;
 import com.jiaruiblog.quickboxserver.model.dto.FileInfo;
 import com.jiaruiblog.quickboxserver.model.request.ChunkUploadRequest;
-import com.jiaruiblog.quickboxserver.model.response.FileCheckResult;
 import com.jiaruiblog.quickboxserver.model.response.UploadProgress;
 import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import com.jiaruiblog.quickboxserver.service.FileUploadService;
