@@ -2,7 +2,6 @@ package com.jiaruiblog.quickboxserver.service;
 
 import com.jiaruiblog.quickboxserver.model.dto.FileInfo;
 import com.jiaruiblog.quickboxserver.model.request.ChunkUploadRequest;
-import com.jiaruiblog.quickboxserver.model.response.FileCheckResult;
 import com.jiaruiblog.quickboxserver.model.response.UploadProgress;
 import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import org.springframework.web.multipart.MultipartFile;
@@ -12,30 +11,13 @@ import java.time.LocalDateTime;
 
 public interface FileUploadService {
 
-    /**
-     * 文件上传前检查（包含MD5去重检查）
-     * @param fileMd5 文件MD5值
-     * @param filename 原始文件名
-     * @param fileSize 文件大小(字节)
-     * @return 检查结果
-     */
-    FileCheckResult prepareUpload(String fileMd5, String filename, long fileSize);
 
     /**
      * 初始化分片上传会话
-     * @param fileMd5 文件MD5值
      * @param filename 原始文件名
      * @return 上传会话信息
      */
-    UploadSession initUploadSession(String fileMd5, String filename);
-
-    /**
-     * 获取上传进度
-     * @param uploadId 上传会话ID
-     * @param chunkNumber 指定查询的分片序号(可选)
-     * @return 上传进度信息
-     */
-    UploadProgress getUploadProgress(String uploadId, Integer chunkNumber);
+    UploadSession initUploadSession(String filename);
 
     /**
      * 上传文件分片

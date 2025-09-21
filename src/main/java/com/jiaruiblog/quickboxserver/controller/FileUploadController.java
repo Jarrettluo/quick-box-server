@@ -28,48 +28,26 @@ public class FileUploadController {
     @Resource
     private FileUploadService uploadService;
 
-    /**
-     * 文件上传前检查（适配vue-simple-uploader的秒传验证）
-     */
-    @GetMapping("/verify")
-    public ApiResult<FileCheckResult> verifyFile(
-            @RequestParam String identifier, // 对应vue-simple-uploader的identifier参数
-            @RequestParam String filename,
-            @RequestParam long size) {
-        FileCheckResult result = uploadService.prepareUpload(
-                identifier,
-                filename,
-                size
-        );
-        return ApiResult.success(result);
-    }
 
     /**
-     * 初始化上传（适配vue-simple-uploader）
+     * 初始化：
+     * 验证用户权限和请求参数。
+     * 生成唯一uploadId，在数据库或缓存中创建一条上传记录，状态为uploading，存储文件名、文件大小、分片数等信息。
+     * @param filename 文件名
      */
     @PostMapping("/init")
     public ApiResult<UploadSession> initUpload(
-            @RequestParam String identifier,
             @RequestParam String filename) {
-        UploadSession session = uploadService.initUploadSession(identifier, filename);
+        UploadSession session = uploadService.initUploadSession(filename);
         return ApiResult.success(session);
     }
 
-    /**
-     * 检查分片上传状态（适配vue-simple-uploader的chunkCheck接口）
-     */
-    @GetMapping("/chunkCheck")
-    public ApiResult<Boolean> checkChunk(
-            @RequestParam String identifier,
-            @RequestParam Integer chunkNumber) {
-        UploadProgress progress = uploadService.getUploadProgress(identifier, chunkNumber);
-        // 返回该分片是否已上传
-        boolean exists = progress.uploadedChunkNumbers().contains(chunkNumber);
-        return ApiResult.success(exists);
-    }
 
     /**
      * 上传分片（适配vue-simple-uploader的upload接口）
+     * @param accessCode 对应vue-simple-uploader的accessCode参数
+     * @param chunkNumber 分片序号
+     * @param file 分片文件
      */
     @PostMapping("/upload")
     public ApiResult<UploadProgress> uploadChunk(
@@ -95,6 +73,7 @@ public class FileUploadController {
 
     /**
      * 合并分片（适配vue-simple-uploader的merge接口）
+     * @param accessCode 对应vue-simple-uploader的accessCode参数
      */
     @PostMapping("/merge")
     public ApiResult<String> mergeChunks(
@@ -102,17 +81,10 @@ public class FileUploadController {
         return ApiResult.success(uploadService.mergeChunks(accessCode));
     }
 
-    /**
-     * 获取上传进度（可选，用于前端展示）
-     */
-    @GetMapping("/progress")
-    public ApiResult<UploadProgress> getProgress(
-            @RequestParam String accessCode) {  // Changed from identifier
-        return ApiResult.success(uploadService.getUploadProgress(accessCode, null));
-    }
 
     /**
      * Get file information by access code
+     * @param accessCode 对应vue-simple-uploader的accessCode参数
      */
     @GetMapping("/info/{accessCode}")
     public ApiResult<FileInfo> getFileInfo(@PathVariable String accessCode) {
@@ -121,7 +93,8 @@ public class FileUploadController {
 
     /**
      * Download file by access code
-     */
+     * @param accessCode 对应vue-simple-uploader的accessCode参数
+    */
     @GetMapping("/download/{accessCode}")
     public ResponseEntity<Resource> downloadFile(@PathVariable String accessCode) throws IOException {
         File file = uploadService.getFileByAccessCode(accessCode);

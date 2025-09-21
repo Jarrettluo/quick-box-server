@@ -38,65 +38,34 @@ public class FileUploadServiceImpl implements FileUploadService {
     @Resource
     RedisTemplate redisTemplate;
 
+
     /**
-     * <p>        // 实现逻辑：
-     * // 1. 检查文件是否已存在(通过MD5)
-     * // 2. 检查是否有未完成的上传记录
-     * // 3. 返回检查结果</p>
-     *
-     * @param fileMd5  文件md5
-     * @param filename 文件名
-     * @param fileSize 文件的大小
-     * @return com.jiaruiblog.quickboxserver.model.response.FileCheckResult
-     **/
-    @Override
-    public FileCheckResult prepareUpload(String fileMd5, String filename, long fileSize) {
-        // 1. Generate random access code (6 chars)
-        String accessCode = generateRandomCode(6);
-
-        // 2. Check if file already exists by identifier (MD5)
-        String targetPath = "/var/uploads/" + accessCode + "/" + filename;
-        boolean exists = new File(targetPath).exists();
-
-
-        // Store access code in Redis with 7-day expiration
-        redisTemplate.opsForValue().set(
-                REDIS_KEY_PREFIX + accessCode,
-                "active",
-                DOWNLOAD_EXPIRATION_DAYS,
-                TimeUnit.DAYS
-        );
-
-        // 3. Prepare chunk directory if needed
-        String chunkPath = "/var/uploads/chunks/" + accessCode;
-        new File(chunkPath).mkdirs();
-
-        return new FileCheckResult(
-                exists,
-                exists ? "/download/" + accessCode : null,
-                Collections.emptyList(),
-                accessCode,  // Using accessCode as uploadId
-                chunkPath
-        );
-    }
-
-    /***
-     * <p>        // 实现逻辑：
+     * <p>// 实现逻辑：
      *         // 1. 生成唯一uploadId
      *         // 2. 创建分片存储目录
      *         // 3. 保存上传记录到数据库
      *         // 4. 返回会话信息</p>
-     * @param accessCode 唯一key
      * @param filename 文件名
      * @return com.jiaruiblog.quickboxserver.model.response.UploadSession
      **/
     @Override
-    public UploadSession initUploadSession(String accessCode, String filename) {
-        // . Create chunk directory
+    public UploadSession initUploadSession(String filename) {
+        // 1. Generate unique uploadId
+        String accessCode = generateRandomCode(6);
+
+        // 2. Store access code in Redis with 7-day expiration
+        redisTemplate.opsForValue().set(    
+            REDIS_KEY_PREFIX + accessCode,
+            "active",
+            DOWNLOAD_EXPIRATION_DAYS,
+            TimeUnit.DAYS
+        );      
+
+        // 3. Create chunk directory
         String chunkPath = "/var/uploads/chunks/" + accessCode;
         new File(chunkPath).mkdirs();
 
-        // 3. Set expiration (24 hours from now)
+        // 4. Set expiration (24 hours from now)
         LocalDateTime expires = LocalDateTime.now().plusHours(24);
 
         return new UploadSession(
@@ -115,7 +84,6 @@ public class FileUploadServiceImpl implements FileUploadService {
      * @param chunkNumber 序号
      * @return com.jiaruiblog.quickboxserver.model.response.UploadProgress
      **/
-    @Override
     public UploadProgress getUploadProgress(String accessCode, Integer chunkNumber) {
 
         // 1. Get chunk directory
@@ -142,14 +110,14 @@ public class FileUploadServiceImpl implements FileUploadService {
         );
     }
 
+    /**
+     * 上传每个分片
+     * @param request 分片上传请求
+     * @param file 分片文件
+     * @return com.jiaruiblog.quickboxserver.model.response.UploadProgress
+     */
     @Override
     public UploadProgress uploadChunk(ChunkUploadRequest request, MultipartFile file) {
-        // 实现逻辑：
-        // 1. 验证分片数据(MD5校验等)
-        // 2. 保存分片到指定位置
-        // 3. 更新上传进度
-        // 4. 返回最新进度
-
         try {
             // 1. Validate chunk data
             if (request.chunkNumber() == null || file.isEmpty()) {
@@ -170,6 +138,11 @@ public class FileUploadServiceImpl implements FileUploadService {
         }
     }
 
+    /**
+     * 合并所有分片
+     * @param identifier 文件唯一标识
+     * @return java.lang.String
+     **/
     @Override
     @Transactional
     public String mergeChunks(String identifier) {
