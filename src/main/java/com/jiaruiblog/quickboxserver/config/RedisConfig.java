@@ -13,11 +13,7 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
  * //@ConditionalOnClass(RedisOperations.class)
  * //@EnableConfigurationProperties(RedisProperties.class)
  *
- * @ClassName RedisConfig
- * @Description RedisConfig
  * @author luojiarui
- * @Date 2022/8/14 17:11
- * @Version 1.0
  **/
 @Configuration
 @EnableCaching

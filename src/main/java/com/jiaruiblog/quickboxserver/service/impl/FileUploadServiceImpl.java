@@ -1,12 +1,15 @@
 package com.jiaruiblog.quickboxserver.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import com.jiaruiblog.quickboxserver.model.dto.FileInfo;
 import com.jiaruiblog.quickboxserver.model.request.ChunkUploadRequest;
-import com.jiaruiblog.quickboxserver.model.response.FileCheckResult;
 import com.jiaruiblog.quickboxserver.model.response.UploadProgress;
 import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import com.jiaruiblog.quickboxserver.service.FileUploadService;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.tomcat.util.http.fileupload.FileUtils;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -23,12 +26,13 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class FileUploadServiceImpl implements FileUploadService {
 
@@ -36,34 +40,58 @@ public class FileUploadServiceImpl implements FileUploadService {
     private static final long DOWNLOAD_EXPIRATION_DAYS = 7;
 
     @Resource
-    RedisTemplate redisTemplate;
+    RedisTemplate<String, String> redisTemplate;
 
 
     /**
      * <p>// 实现逻辑：
-     *         // 1. 生成唯一uploadId
-     *         // 2. 创建分片存储目录
-     *         // 3. 保存上传记录到数据库
-     *         // 4. 返回会话信息</p>
-     * @param filename 文件名
+     * // 1. 生成唯一uploadId
+     * // 2. 创建分片存储目录
+     * // 3. 保存上传记录到数据库
+     * // 4. 返回会话信息</p>
+     *
+     * @param chunkUploadRequest 文件名
      * @return com.jiaruiblog.quickboxserver.model.response.UploadSession
      **/
     @Override
-    public UploadSession initUploadSession(String filename) {
+    public UploadSession initUploadSession(ChunkUploadRequest chunkUploadRequest) {
         // 1. Generate unique uploadId
         String accessCode = generateRandomCode(6);
 
         // 2. Store access code in Redis with 7-day expiration
-        redisTemplate.opsForValue().set(    
-            REDIS_KEY_PREFIX + accessCode,
-            "active",
-            DOWNLOAD_EXPIRATION_DAYS,
-            TimeUnit.DAYS
-        );      
+        redisTemplate.opsForValue().set(
+                REDIS_KEY_PREFIX + accessCode,
+                "active",
+                DOWNLOAD_EXPIRATION_DAYS,
+                TimeUnit.DAYS
+        );
 
         // 3. Create chunk directory
         String chunkPath = "/var/uploads/chunks/" + accessCode;
-        new File(chunkPath).mkdirs();
+        boolean mkdir = new File(chunkPath).mkdirs();
+        if (!mkdir) {
+            throw new BusinessException(ErrorCode.OPERATE_FAILED);
+        }
+
+        // 4. Persist file metadata to chunk directory
+        String filename = chunkUploadRequest.filename();
+        Long totalSize = chunkUploadRequest.totalSize();
+        Integer totalChunks = chunkUploadRequest.totalChunks();
+
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            java.util.Map<String, Object> metadata = new java.util.HashMap<>();
+            metadata.put("filename", filename);
+            metadata.put("totalSize", totalSize);
+            metadata.put("totalChunks", totalChunks);
+            metadata.put("uploadTime", Instant.now().toString());
+
+            File metadataFile = new File(chunkPath, "metadata.json");
+            objectMapper.writeValue(metadataFile, metadata);
+        } catch (java.io.IOException e) {
+            log.error("Failed to persist file metadata: {}", e.getMessage());
+            throw new BusinessException(ErrorCode.OPERATE_FAILED);
+        }
 
         // 4. Set expiration (24 hours from now)
         LocalDateTime expires = LocalDateTime.now().plusHours(24);
@@ -75,17 +103,47 @@ public class FileUploadServiceImpl implements FileUploadService {
         );
     }
 
-    /***
-     * <p>        // 实现逻辑：
-     *         // 1. 查询上传记录
-     *         // 2. 获取已上传分片列表
-     *         // 3. 构造进度响应</p>
-     * @param accessCode 唯一ID
+    /**
+     * 上传每个分片
+     *
+     * @param request 分片上传请求
+     * @param file    分片文件
+     * @return com.jiaruiblog.quickboxserver.model.response.UploadProgress
+     */
+    @Override
+    public UploadProgress uploadChunk(ChunkUploadRequest request, MultipartFile file) {
+        try {
+            // 1. Validate chunk data
+            if (request.chunkNumber() == null || file.isEmpty()) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR);
+            }
+
+            // 2. Save chunk to target location
+            String chunkPath = "/var/uploads/chunks/" + request.uploadId();
+            File chunkFile = new File(chunkPath, request.chunkNumber().toString());
+
+            file.transferTo(chunkFile);
+
+            // 3. Get updated progress
+            return getUploadProgress(request.uploadId(), request.chunkNumber());
+
+        } catch (IOException e) {
+            log.error("upload chunk file is error, error msg: {}", e.getMessage(), e.getCause());
+            throw new BusinessException(ErrorCode.OPERATE_FAILED);
+        }
+    }
+
+    /**
+     * <p>// 实现逻辑：
+     * // 1. 查询上传记录
+     * // 2. 获取已上传分片列表
+     * // 3. 构造进度响应</p>
+     *
+     * @param accessCode  唯一ID
      * @param chunkNumber 序号
      * @return com.jiaruiblog.quickboxserver.model.response.UploadProgress
      **/
     public UploadProgress getUploadProgress(String accessCode, Integer chunkNumber) {
-
         // 1. Get chunk directory
         String chunkPath = "/var/uploads/chunks/" + accessCode;
         File chunkDir = new File(chunkPath);
@@ -101,79 +159,85 @@ public class FileUploadServiceImpl implements FileUploadService {
         return new UploadProgress(
                 accessCode,
                 uploadedChunks.size(),
-                null, // totalChunks unknown at this stage
-                false,
-                null,
+                chunkNumber, // totalChunks unknown at this stage
+                uploadedChunks.size() == chunkNumber,
                 uploadedChunks,
                 chunkPath,
                 Instant.now()
         );
     }
 
-    /**
-     * 上传每个分片
-     * @param request 分片上传请求
-     * @param file 分片文件
-     * @return com.jiaruiblog.quickboxserver.model.response.UploadProgress
-     */
-    @Override
-    public UploadProgress uploadChunk(ChunkUploadRequest request, MultipartFile file) {
-        try {
-            // 1. Validate chunk data
-            if (request.chunkNumber() == null || file.isEmpty()) {
-                throw new IllegalArgumentException("Invalid chunk data");
-            }
-
-            // 2. Save chunk to target location
-            String chunkPath = "/var/uploads/chunks/" + request.identifier();
-            File chunkFile = new File(chunkPath, request.chunkNumber().toString());
-
-            file.transferTo(chunkFile);
-
-            // 3. Get updated progress
-            return getUploadProgress(request.identifier(), request.chunkNumber());
-
-        } catch (IOException e) {
-            throw new RuntimeException("Chunk upload failed: " + e.getMessage(), e);
-        }
-    }
 
     /**
      * 合并所有分片
+     *
      * @param identifier 文件唯一标识
      * @return java.lang.String
      **/
     @Override
     @Transactional
     public String mergeChunks(String identifier) {
+        // 1. Prepare paths
+        String chunkDirPath = "/var/uploads/chunks/" + identifier;
+        String finalDirPath = "/var/uploads/" + identifier;
+        boolean mkdir = new File(finalDirPath).mkdirs();
+        if (!mkdir) {
+            throw new BusinessException(ErrorCode.OPERATE_FAILED);
+        }
+        // 2. Read metadata
+        String filename;
+        long totalSize;
+        int totalChunks;
+        File metadataFile = new File(chunkDirPath, "metadata.json");
         try {
-            // 1. Prepare paths
-            String chunkDirPath = "/var/uploads/chunks/" + identifier;
-            String finalDirPath = "/var/uploads/" + identifier;
-            new File(finalDirPath).mkdirs();
+            ObjectMapper objectMapper = new ObjectMapper();
+            Map<String, String> metadata = objectMapper.readValue(metadataFile, Map.class);
+            filename = metadata.get("filename");
+            totalSize = Long.parseLong(metadata.get("totalSize"));
+            totalChunks = Integer.parseInt(metadata.get("totalChunks"));
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
 
-            // 2. Get all chunks
-            File[] chunkFiles = new File(chunkDirPath).listFiles();
-            if (chunkFiles == null || chunkFiles.length == 0) {
-                throw new IllegalStateException("No chunks found");
+        // 3. Get all chunks
+        File[] chunkFiles = new File(chunkDirPath).listFiles((dir, name) -> !name.equals("metadata.json"));
+        if (chunkFiles == null || chunkFiles.length == 0) {
+            throw new IllegalStateException("No chunks found");
+        }
+
+        // 4. Validate chunk count
+        if (chunkFiles.length != totalChunks) {
+            throw new IllegalStateException("Chunk count mismatch. Expected: "
+                    + totalChunks + ", Actual: " + chunkFiles.length);
+        }
+
+        // 5. Sort chunks numerically
+        Arrays.sort(chunkFiles, Comparator.comparingInt(f -> Integer.parseInt(f.getName())));
+
+        // 6. Merge files and calculate total size
+        File outputFile = new File(finalDirPath, filename);
+        long mergedSize = 0;
+        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
+            for (File chunk : chunkFiles) {
+                long chunkSize = Files.copy(chunk.toPath(), fos);
+                mergedSize += chunkSize;
             }
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.OPERATE_FAILED);
+        }
 
-            // 3. Sort chunks numerically
-            Arrays.sort(chunkFiles, Comparator.comparingInt(f -> Integer.parseInt(f.getName())));
-
-            // 4. Merge files
-            File outputFile = new File(finalDirPath, chunkFiles[0].getName() + ".merged");
-            try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-                for (File chunk : chunkFiles) {
-                    Files.copy(chunk.toPath(), fos);
-                }
+        // 7. Validate total size
+        if (mergedSize != totalSize) {
+            boolean delete = outputFile.delete();
+            if (!delete) {
+                log.error("chunk files are remove failed!");
             }
-
-            // 5. Cleanup chunks
+            throw new IllegalStateException("File size mismatch. Expected: " + totalSize + ", Actual: " + mergedSize);
+        }
+        try {
+            // 8. Cleanup chunks
             FileUtils.deleteDirectory(new File(chunkDirPath));
-
             return "/download/" + identifier + "/" + outputFile.getName();
-
         } catch (IOException e) {
             throw new RuntimeException("Merge failed: " + e.getMessage(), e);
         }
@@ -189,29 +253,32 @@ public class FileUploadServiceImpl implements FileUploadService {
         File chunksRoot = new File("/var/uploads/chunks/");
         File[] sessionDirs = chunksRoot.listFiles();
 
-        if (sessionDirs != null) {
-            for (File sessionDir : sessionDirs) {
-                // Check last modified time (simplified expiration check)
-                if (sessionDir.lastModified() < before.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) {
-                    try {
-                        FileUtils.deleteDirectory(sessionDir);
-                        // Optional: Also delete corresponding final file if exists
-                        File finalFile = new File("/var/uploads/" + sessionDir.getName());
-                        if (finalFile.exists()) {
-                            FileUtils.deleteDirectory(finalFile);
-                        }
-                    } catch (IOException e) {
-                        // Log error but continue with other directories
+        if (sessionDirs == null) {
+            return;
+        }
+        for (File sessionDir : sessionDirs) {
+            // Check last modified time (simplified expiration check)
+            if (sessionDir.lastModified() < before.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) {
+                try {
+                    FileUtils.deleteDirectory(sessionDir);
+                    // Optional: Also delete corresponding final file if exists
+                    File finalFile = new File("/var/uploads/" + sessionDir.getName());
+                    if (finalFile.exists()) {
+                        FileUtils.deleteDirectory(finalFile);
                     }
+                } catch (IOException e) {
+                    // Log error but continue with other directories
+                    log.error("remove {} is failed", sessionDir, e.getCause());
                 }
             }
         }
+
     }
 
     @Override
     public File getFileByAccessCode(String accessCode) {
         // Check if access code exists in Redis
-        if (!redisTemplate.hasKey(REDIS_KEY_PREFIX + accessCode)) {
+        if (Boolean.FALSE.equals(redisTemplate.hasKey(REDIS_KEY_PREFIX + accessCode))) {
             throw new IllegalArgumentException("Invalid or expired access code");
         }
 

@@ -58,15 +58,15 @@ public class GlobalExceptionHandler {
 
 
     // Validation Exception Handling (combined from both)
-//    @ResponseBody
-//    @ExceptionHandler({MethodArgumentNotValidException.class})
-//    @ResponseStatus(HttpStatus.BAD_REQUEST)
-//    public ApiResult<Object> handleValidationExceptions(Exception ex) {
-//        String errorMsg = ex instanceof MethodArgumentNotValidException
-//                ? ((MethodArgumentNotValidException) ex).getBindingResult().getAllErrors().get(0).getDefaultMessage()
-//                : ErrorCode.INVALID_PARAM.getLocalizedMessage(messageSource, null);
-//        return new ApiResult<>(ErrorCode.INVALID_PARAM.getCode(), errorMsg, null);
-//    }
+    @ResponseBody
+    @ExceptionHandler({MethodArgumentNotValidException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResult<Object> handleValidationExceptions(Exception ex) {
+        String errorMsg = ex instanceof MethodArgumentNotValidException
+                ? ((MethodArgumentNotValidException) ex).getBindingResult().getAllErrors().get(0).getDefaultMessage()
+                : ErrorCode.INVALID_PARAM.getLocalizedMessage(messageSource, null);
+        return new ApiResult<>(ErrorCode.INVALID_PARAM.getCode(), errorMsg, null);
+    }
 
     // 增强版校验异常处理
     @ResponseBody
@@ -83,22 +83,6 @@ public class GlobalExceptionHandler {
                 null
         );
     }
-
-//    // 新增路径参数校验处理
-//    @ResponseBody
-//    @ExceptionHandler(ConstraintViolationException.class)
-//    @ResponseStatus(HttpStatus.BAD_REQUEST)
-//    public ApiResult<Object> handleConstraintViolation(ConstraintViolationException ex) {
-//        String errorMsg = ex.getConstraintViolations().stream()
-//                .map(violation -> violation.getPropertyPath() + ": " + violation.getMessage())
-//                .collect(Collectors.joining("; "));
-//
-//        return new ApiResult<>(
-//                ErrorCode.INVALID_PARAM.getCode(),
-//                "路径参数校验失败: " + errorMsg,
-//                null
-//        );
-//    }
 
     // Other common exceptions (from CommonExceptionHandler)
     @ResponseBody
@@ -123,13 +107,6 @@ public class GlobalExceptionHandler {
         return ApiResult.error(ErrorCode.PROCESS_ERROR.getCode(),
                 ErrorCode.PROCESS_ERROR.getLocalizedMessage(messageSource, null));
     }
-
-
-//    // Authentication Exception (from CommonExceptionHandler)
-//    @ExceptionHandler(AuthenticationException.class)
-//    public void handleAuthenticationException(HttpServletResponse response) {
-//        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-//    }
 
     private HttpStatus resolveHttpStatus(ErrorCode errorCode) {
         // 自定义业务错误码(≥1000)统一映射为400

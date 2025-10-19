@@ -17,7 +17,7 @@ public interface FileUploadService {
      * @param filename 原始文件名
      * @return 上传会话信息
      */
-    UploadSession initUploadSession(String filename);
+    UploadSession initUploadSession(ChunkUploadRequest chunkUploadRequest);
 
     /**
      * 上传文件分片

@@ -1,12 +1,5 @@
 package com.jiaruiblog.quickboxserver.exception;
 
-/**
- * <p>业务异常类，用于处理业务逻辑中的异常情况</p>
- *
- **/
-/**
- * 业务异常基类
- */
 import lombok.Getter;
 
 import java.util.Arrays;

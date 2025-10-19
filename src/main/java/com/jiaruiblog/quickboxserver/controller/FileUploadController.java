@@ -32,12 +32,13 @@ public class FileUploadController {
      * 初始化：
      * 验证用户权限和请求参数。
      * 生成唯一uploadId，在数据库或缓存中创建一条上传记录，状态为uploading，存储文件名、文件大小、分片数等信息。
+     * 后续应该 使用浏览器的cookie来判断是来自于同一个浏览器
      * @param filename 文件名
      */
     @PostMapping("/init")
     public ApiResult<UploadSession> initUpload(
-            @RequestParam String filename) {
-        UploadSession session = uploadService.initUploadSession(filename);
+            @RequestBody ChunkUploadRequest chunkUploadRequest) {
+        UploadSession session = uploadService.initUploadSession(chunkUploadRequest);
         return ApiResult.success(session);
     }
 
@@ -50,8 +51,7 @@ public class FileUploadController {
      */
     @PostMapping("/upload")
     public ApiResult<UploadProgress> uploadChunk(
-            @RequestParam String accessCode,
-            @RequestParam Integer chunkNumber,
+            @RequestBody ChunkUploadRequest chunkUploadRequest,
             @RequestParam("file") MultipartFile file) {
 
         ChunkUploadRequest request = new ChunkUploadRequest(

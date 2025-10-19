@@ -1,11 +1,8 @@
 package com.jiaruiblog.quickboxserver.common;
 
 /**
- * @ClassName MessageConstant
- * @Description 接口返回的各类常量信息
+ * 接口返回的各类常量信息
  * @author luojiarui
- * @Date 2022/6/4 5:12 下午
- * @Version 1.0
  **/
 public class MessageConstant {
 

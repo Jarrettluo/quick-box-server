@@ -5,12 +5,18 @@ import java.util.List;
 
 // 增强后的上传进度
 public record UploadProgress(
+        // 分片上传的唯一ID，这里是accessCode
         String uploadId,
+        // 已经上传的分片数量
         Integer uploadedChunks,
+        // 总分片数量
         Integer totalChunks,
+        // 已经完成的数量
         Boolean completed,
-        String fileUrl,
+        // 已经上传的分片信息
         List<Integer> uploadedChunkNumbers,
-        String chunkPath,     // 分片存储路径
-        Instant lastModified // 最后上传时间
+        // 分片存储路径
+        String chunkPath,
+        // 最后上传时间
+        Instant lastModified
 ) {}
