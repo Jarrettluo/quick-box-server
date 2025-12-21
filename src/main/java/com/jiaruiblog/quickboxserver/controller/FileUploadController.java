@@ -17,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -82,14 +84,18 @@ public class FileUploadController {
      * @param accessCode 对应vue-simple-uploader的accessCode参数
     */
     @GetMapping("/download/{accessCode}")
-    public ResponseEntity<Resource> downloadFile(@PathVariable String accessCode) throws IOException {
+    public ResponseEntity<org.springframework.core.io.Resource> downloadFile(@PathVariable String accessCode) throws IOException {
         File file = uploadService.getFileByAccessCode(accessCode);
         Path path = file.toPath();
-        Resource resource = (Resource) new InputStreamResource(Files.newInputStream(path));
+        org.springframework.core.io.Resource resource = new InputStreamResource(Files.newInputStream(path));
+
+        String encodedFilename = URLEncoder.encode(file.getName(), StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        String contentDisposition = "attachment; filename=\"" + encodedFilename + "\"; filename*=UTF-8''" + encodedFilename;
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + file.getName() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition") // 添加这一行
                 .contentLength(file.length())
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(resource);
