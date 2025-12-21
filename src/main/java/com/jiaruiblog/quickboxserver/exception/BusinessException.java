@@ -11,7 +11,9 @@ public class BusinessException extends RuntimeException {
     // Getters
     @Getter
     private final ErrorCode errorCode;
+
     private final Object[] messageArgs;
+
     @Getter
     private final String detailMessage;
 

@@ -33,7 +33,7 @@ public class FileUploadController {
      * 验证用户权限和请求参数。
      * 生成唯一uploadId，在数据库或缓存中创建一条上传记录，状态为uploading，存储文件名、文件大小、分片数等信息。
      * 后续应该 使用浏览器的cookie来判断是来自于同一个浏览器
-     * @param filename 文件名
+     * @param chunkUploadRequest 文件名
      */
     @PostMapping("/init")
     public ApiResult<UploadSession> initUpload(
@@ -45,28 +45,15 @@ public class FileUploadController {
 
     /**
      * 上传分片（适配vue-simple-uploader的upload接口）
-     * @param accessCode 对应vue-simple-uploader的accessCode参数
-     * @param chunkNumber 分片序号
+     * @param chunkUploadRequest 分片序号
      * @param file 分片文件
      */
     @PostMapping("/upload")
     public ApiResult<UploadProgress> uploadChunk(
-            @RequestBody ChunkUploadRequest chunkUploadRequest,
+            @ModelAttribute  ChunkUploadRequest chunkUploadRequest,
             @RequestParam("file") MultipartFile file) {
-
-        ChunkUploadRequest request = new ChunkUploadRequest(
-                accessCode,
-                chunkNumber,
-                null,  // Optional fields can be null
-                null,
-                null,
-                null,
-                file.getOriginalFilename(),
-                null,
-                file.getContentType()
-        );
         
-        UploadProgress progress = uploadService.uploadChunk(request, file);
+        UploadProgress progress = uploadService.uploadChunk(chunkUploadRequest, file);
         return ApiResult.success(progress);
     }
 
@@ -77,7 +64,7 @@ public class FileUploadController {
     @PostMapping("/merge")
     public ApiResult<String> mergeChunks(
             @RequestParam String accessCode) {  // Simplified parameters
-        return ApiResult.success(uploadService.mergeChunks(accessCode));
+        return ApiResult.success("success", uploadService.mergeChunks(accessCode));
     }
 
 
