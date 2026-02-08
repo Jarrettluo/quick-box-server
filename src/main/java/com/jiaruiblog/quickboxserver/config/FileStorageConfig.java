@@ -15,7 +15,7 @@ public class FileStorageConfig {
      * Windows默认: C:/uploads
      */
 //    private String basePath = "/var/uploads";
-    private String basePath = "C:/app";
+    private String basePath = "/home/ubuntu/quick_box/box_data";
 
     /**
      * 分片存储路径，相对于basePath

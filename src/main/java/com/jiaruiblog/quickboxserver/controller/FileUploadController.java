@@ -8,7 +8,7 @@ import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import com.jiaruiblog.quickboxserver.service.FileUploadService;
 import jakarta.annotation.Resource;
 
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -86,8 +86,7 @@ public class FileUploadController {
     @GetMapping("/download/{accessCode}")
     public ResponseEntity<org.springframework.core.io.Resource> downloadFile(@PathVariable String accessCode) throws IOException {
         File file = uploadService.getFileByAccessCode(accessCode);
-        Path path = file.toPath();
-        org.springframework.core.io.Resource resource = new InputStreamResource(Files.newInputStream(path));
+        org.springframework.core.io.Resource resource = new FileSystemResource(file);
 
         String encodedFilename = URLEncoder.encode(file.getName(), StandardCharsets.UTF_8)
                 .replace("+", "%20");
@@ -95,9 +94,24 @@ public class FileUploadController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
-                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition") // 添加这一行
+                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Accept-Ranges, Content-Length, Cache-Control") // 添加这一行
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .header(HttpHeaders.CACHE_CONTROL, "no-store, no-cache, must-revalidate")
                 .contentLength(file.length())
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(resource);
+    }
+
+    /**
+     * Download file by access code with filename (ignored)
+     * @param accessCode 对应vue-simple-uploader的accessCode参数
+     * @param filename 文件名（忽略，仅用于URL兼容性）
+     */
+    @GetMapping("/download/{accessCode}/{filename}")
+    public ResponseEntity<org.springframework.core.io.Resource> downloadFileWithName(
+            @PathVariable String accessCode,
+            @PathVariable String filename) throws IOException {
+        // 委托给原始方法，忽略filename参数
+        return downloadFile(accessCode);
     }
 }

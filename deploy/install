@@ -1,0 +1,25 @@
+# 创建快捷命令
+sudo tee /usr/local/bin/quick-box > /dev/null << EOF
+#!/bin/bash
+case "\$1" in
+    start)
+        /home/ubuntu/quick_box/bin/start.sh
+        ;;
+    stop)
+        /home/ubuntu/quick_box/bin/stop.sh
+        ;;
+    restart)
+        /home/ubuntu/quick_box/bin/restart.sh
+        ;;
+    status)
+        /home/ubuntu/quick_box/bin/status.sh
+        ;;
+    logs)
+        /home/ubuntu/quick_box/bin/logs.sh
+        ;;
+    *)
+        echo "用法: quick-box {start|stop|restart|status|logs}"
+        exit 1
+        ;;
+esac
+EOF
