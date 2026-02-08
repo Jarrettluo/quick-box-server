@@ -8,7 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -457,11 +457,11 @@ public class ConfigurableStorageStrategy implements StorageStrategy {
         stats.setSuccessCount(successfulRequests);
         stats.setFailureCount(failedRequests);
 
-        if (totalRequests > 0) {
-            stats.setSuccessRate((successfulRequests * 100.0) / totalRequests);
-        } else {
-            stats.setSuccessRate(100.0);
-        }
+//        if (totalRequests > 0) {
+//            stats.setSuccessRate((successfulRequests * 100.0) / totalRequests);
+//        } else {
+//            stats.setSuccessRate(100.0);
+//        }
 
         return stats;
     }

@@ -13,6 +13,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -542,7 +543,7 @@ public class LocalFileStorageService extends AbstractStorageService {
                     folderInfo.setTotalFiles((Integer) metadata.get("totalFiles"));
                     folderInfo.setTotalSize(((Number) metadata.get("totalSize")).longValue());
                     folderInfo.setStructureJson((String) metadata.get("structureJson"));
-                    folderInfo.setMetadataJson(metadataJson);
+//                    folderInfo.setMetadataJson(metadataJson);
 
                     if (metadata.containsKey("accessCode")) {
                         folderInfo.setAccessCode((String) metadata.get("accessCode"));
@@ -685,8 +686,8 @@ public class LocalFileStorageService extends AbstractStorageService {
             usage.setTotalSpace(Files.getFileStore(basePath).getTotalSpace());
             usage.setUsedSpace(fileStats.totalSize + chunkStats.totalSize);
             usage.setAvailableSpace(usage.getTotalSpace() - usage.getUsedSpace());
-            usage.setFileCount(fileStats.fileCount);
-            usage.setFolderCount(fileStats.folderCount);
+//            usage.setFileCount(fileStats.fileCount);
+//            usage.setFolderCount(fileStats.folderCount);
             usage.setSessionCount((long) uploadSessions.size());
 
             // 计算最大/最小文件大小

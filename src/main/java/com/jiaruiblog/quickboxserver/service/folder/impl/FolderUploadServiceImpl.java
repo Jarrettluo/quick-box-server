@@ -231,7 +231,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             if (folderInfo != null) {
                 folderInfo.setFolderPath(folderPath);
                 folderInfo.setStatus(FolderUploadResponse.UploadStatus.COMPLETED);
-                folderInfo.setCompleteTime(LocalDateTime.now());
+//                folderInfo.setCompleteTime(LocalDateTime.now());
                 saveFolderInfoToRedis(folderInfo);
                 folderInfos.put(session.getAccessCode(), folderInfo);
             }

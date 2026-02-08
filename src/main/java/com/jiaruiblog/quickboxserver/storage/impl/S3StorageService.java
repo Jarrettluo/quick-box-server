@@ -3,6 +3,8 @@ package com.jiaruiblog.quickboxserver.storage.impl;
 import com.jiaruiblog.quickboxserver.storage.model.*;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -15,6 +17,8 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequ
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -71,7 +75,7 @@ public class S3StorageService extends AbstractStorageService {
 
             // 设置端点（用于MinIO或自定义S3兼容服务）
             if (s3Config.getEndpoint() != null && !s3Config.getEndpoint().isEmpty()) {
-                builder.endpointOverride(new URL(s3Config.getEndpoint()));
+                builder.endpointOverride(new URL(s3Config.getEndpoint()).toURI());
             }
 
             // 设置区域
@@ -93,19 +97,25 @@ public class S3StorageService extends AbstractStorageService {
 
     private S3Presigner buildS3Presigner(StorageConfig.S3Config s3Config) {
         try {
-            software.amazon.awssdk.services.s3.presigner.S3PresignerBuilder builder = S3Presigner.builder();
-
-            // 设置凭证
-            AwsBasicCredentials credentials = AwsBasicCredentials.create(
-                s3Config.getAccessKey(),
-                s3Config.getSecretKey()
+            // 创建凭证提供者
+            AwsCredentials credentials = AwsBasicCredentials.create(
+                    s3Config.getAccessKey(),
+                    s3Config.getSecretKey()
             );
+            AwsCredentialsProvider credentialsProvider = StaticCredentialsProvider.create(credentials);
 
-            builder.credentialsProvider(StaticCredentialsProvider.create(credentials));
+            // 构建 S3Presigner
+            S3Presigner.Builder builder = S3Presigner.builder()
+                    .credentialsProvider(credentialsProvider);
 
-            // 设置端点
+            // 设置端点（使用 URI 而不是 URL）
             if (s3Config.getEndpoint() != null && !s3Config.getEndpoint().isEmpty()) {
-                builder.endpointOverride(new URL(s3Config.getEndpoint()));
+                String endpoint = s3Config.getEndpoint();
+                // 确保端点有正确的协议
+                if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
+                    endpoint = "https://" + endpoint;
+                }
+                builder.endpointOverride(new URI(endpoint));
             }
 
             // 设置区域
@@ -114,6 +124,10 @@ public class S3StorageService extends AbstractStorageService {
             }
 
             return builder.build();
+
+        } catch (URISyntaxException e) {
+            log.error("S3端点URL格式错误: {}", s3Config.getEndpoint(), e);
+            throw new RuntimeException("无效的S3端点配置", e);
         } catch (Exception e) {
             log.error("构建S3预签名客户端失败", e);
             throw new RuntimeException("构建S3预签名客户端失败", e);
