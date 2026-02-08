@@ -1,6 +1,6 @@
 package com.jiaruiblog.quickboxserver.exception;
 
-import lombok.Getter;
+
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 
@@ -8,7 +8,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Getter
+
 public enum ErrorCode {
 
     SUCCESS(2000, "error-code.success"),
@@ -90,6 +90,14 @@ public enum ErrorCode {
     ErrorCode(Integer code, String messageKey) {
         this.code = code;
         this.messageKey = messageKey;
+    }
+
+    public Integer getCode() {
+        return code;
+    }
+
+    public String getMessageKey() {
+        return messageKey;
     }
 
     public String getLocalizedMessage(MessageSource messageSource, Locale locale) {

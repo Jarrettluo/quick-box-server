@@ -8,7 +8,7 @@ import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import com.jiaruiblog.quickboxserver.service.FileUploadService;
 import jakarta.annotation.Resource;
 
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -33,7 +35,7 @@ public class FileUploadController {
      * 验证用户权限和请求参数。
      * 生成唯一uploadId，在数据库或缓存中创建一条上传记录，状态为uploading，存储文件名、文件大小、分片数等信息。
      * 后续应该 使用浏览器的cookie来判断是来自于同一个浏览器
-     * @param filename 文件名
+     * @param chunkUploadRequest 文件名
      */
     @PostMapping("/init")
     public ApiResult<UploadSession> initUpload(
@@ -45,28 +47,15 @@ public class FileUploadController {
 
     /**
      * 上传分片（适配vue-simple-uploader的upload接口）
-     * @param accessCode 对应vue-simple-uploader的accessCode参数
-     * @param chunkNumber 分片序号
+     * @param chunkUploadRequest 分片序号
      * @param file 分片文件
      */
     @PostMapping("/upload")
     public ApiResult<UploadProgress> uploadChunk(
-            @RequestBody ChunkUploadRequest chunkUploadRequest,
+            @ModelAttribute  ChunkUploadRequest chunkUploadRequest,
             @RequestParam("file") MultipartFile file) {
-
-        ChunkUploadRequest request = new ChunkUploadRequest(
-                accessCode,
-                chunkNumber,
-                null,  // Optional fields can be null
-                null,
-                null,
-                null,
-                file.getOriginalFilename(),
-                null,
-                file.getContentType()
-        );
         
-        UploadProgress progress = uploadService.uploadChunk(request, file);
+        UploadProgress progress = uploadService.uploadChunk(chunkUploadRequest, file);
         return ApiResult.success(progress);
     }
 
@@ -77,7 +66,7 @@ public class FileUploadController {
     @PostMapping("/merge")
     public ApiResult<String> mergeChunks(
             @RequestParam String accessCode) {  // Simplified parameters
-        return ApiResult.success(uploadService.mergeChunks(accessCode));
+        return ApiResult.success("success", uploadService.mergeChunks(accessCode));
     }
 
 
@@ -95,16 +84,34 @@ public class FileUploadController {
      * @param accessCode 对应vue-simple-uploader的accessCode参数
     */
     @GetMapping("/download/{accessCode}")
-    public ResponseEntity<Resource> downloadFile(@PathVariable String accessCode) throws IOException {
+    public ResponseEntity<org.springframework.core.io.Resource> downloadFile(@PathVariable String accessCode) throws IOException {
         File file = uploadService.getFileByAccessCode(accessCode);
-        Path path = file.toPath();
-        Resource resource = (Resource) new InputStreamResource(Files.newInputStream(path));
+        org.springframework.core.io.Resource resource = new FileSystemResource(file);
+
+        String encodedFilename = URLEncoder.encode(file.getName(), StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        String contentDisposition = "attachment; filename=\"" + encodedFilename + "\"; filename*=UTF-8''" + encodedFilename;
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + file.getName() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Accept-Ranges, Content-Length, Cache-Control") // 添加这一行
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .header(HttpHeaders.CACHE_CONTROL, "no-store, no-cache, must-revalidate")
                 .contentLength(file.length())
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(resource);
+    }
+
+    /**
+     * Download file by access code with filename (ignored)
+     * @param accessCode 对应vue-simple-uploader的accessCode参数
+     * @param filename 文件名（忽略，仅用于URL兼容性）
+     */
+    @GetMapping("/download/{accessCode}/{filename}")
+    public ResponseEntity<org.springframework.core.io.Resource> downloadFileWithName(
+            @PathVariable String accessCode,
+            @PathVariable String filename) throws IOException {
+        // 委托给原始方法，忽略filename参数
+        return downloadFile(accessCode);
     }
 }

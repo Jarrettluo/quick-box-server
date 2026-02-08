@@ -56,18 +56,6 @@ public class GlobalExceptionHandler {
                 .body(result);
     }
 
-
-    // Validation Exception Handling (combined from both)
-    @ResponseBody
-    @ExceptionHandler({MethodArgumentNotValidException.class})
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ApiResult<Object> handleValidationExceptions(Exception ex) {
-        String errorMsg = ex instanceof MethodArgumentNotValidException
-                ? ((MethodArgumentNotValidException) ex).getBindingResult().getAllErrors().get(0).getDefaultMessage()
-                : ErrorCode.INVALID_PARAM.getLocalizedMessage(messageSource, null);
-        return new ApiResult<>(ErrorCode.INVALID_PARAM.getCode(), errorMsg, null);
-    }
-
     // 增强版校验异常处理
     @ResponseBody
     @ExceptionHandler({MethodArgumentNotValidException.class})
@@ -84,19 +72,20 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ApiResult<Object> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException e) {
+        return ApiResult.error(ErrorCode.INVALID_PARAM.getCode(), "文件大小超过限制，请减小文件大小或分片上传");
+    }
+
     // Other common exceptions (from CommonExceptionHandler)
     @ResponseBody
     @ExceptionHandler({
-            MaxUploadSizeExceededException.class,
             HttpRequestMethodNotSupportedException.class,
             HttpMessageConversionException.class,
             MissingServletRequestParameterException.class
     })
     public ApiResult<Object> handleCommonExceptions(Exception e, HandlerMethod handlerMethod) {
-        if (e instanceof MaxUploadSizeExceededException) {
-            return ApiResult.error(ErrorCode.FILE_SIZE_EXCEEDED.getCode(),
-                    ErrorCode.FILE_SIZE_EXCEEDED.getLocalizedMessage(messageSource, null));
-        } else if (e instanceof HttpRequestMethodNotSupportedException) {
+        if (e instanceof HttpRequestMethodNotSupportedException) {
             return ApiResult.error(ErrorCode.INVALID_PARAM.getCode(), e.getMessage());
         } else if (e instanceof HttpMessageConversionException) {
             return ApiResult.error(ErrorCode.INVALID_PARAM.getCode(),
