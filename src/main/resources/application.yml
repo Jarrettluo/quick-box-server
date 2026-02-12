@@ -1,0 +1,31 @@
+# 开发环境配置 (默认)
+spring:
+  application:
+    name: quick-box-server
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+server:
+  port: 8089
+  tomcat:
+    max-swallow-size: -1
+
+redis:
+  host: localhost
+  port: 16379
+  password: ""
+  database: 0
+  timeout: 10000
+  pool:
+    max-active: 8
+    max-wait: -1ms
+    max-idle: 8
+    min-idle: 0
+
+file:
+  storage:
+    base-path: ./uploads
+    chunks-path: chunks
+    final-path: files

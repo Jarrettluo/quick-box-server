@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.4</version>
+        <version>3.3.9</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.jiaruiblog</groupId>
@@ -79,18 +79,30 @@
             <version>2.16.1</version>
         </dependency>
 
-        <!-- Apache HttpClient (用于WebDAV) -->
-        <dependency>
-            <groupId>org.apache.httpcomponents.client5</groupId>
-            <artifactId>httpclient5</artifactId>
-            <version>5.3.1</version>
-        </dependency>
 
         <!-- AWS SDK for S3 -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>2.26.17</version>
+            <!-- 排除可能冲突的HTTP客户端 -->
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- 使用HttpClient 4.x替代HttpClient 5.x -->
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <version>4.5.14</version>
         </dependency>
 
         <dependency>
@@ -98,6 +110,7 @@
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>2.6.0</version>
         </dependency>
+
     </dependencies>
 
     <build>
@@ -118,6 +131,7 @@
                         <!-- 可选：解决某些 IDE 兼容性问题 -->
                         <arg>-parameters</arg>
                     </compilerArgs>
+                    <release>17</release>
                 </configuration>
             </plugin>
             <plugin>
