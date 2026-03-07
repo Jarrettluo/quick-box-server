@@ -37,6 +37,10 @@ WORKDIR /app
 # 从构建阶段复制jar文件
 COPY --from=build /app/target/*.jar app.jar
 
+# 复制配置文件
+COPY config/application-docker.yml /app/config/application-docker.yml
+COPY config/application-production.yml /app/config/application-production.yml
+
 # 复制启动脚本
 COPY docker-entrypoint.sh .
 RUN chmod +x docker-entrypoint.sh

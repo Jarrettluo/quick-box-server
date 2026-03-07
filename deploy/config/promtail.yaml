@@ -1,0 +1,102 @@
+# Promtail 配置文件
+# 适用于 QuickBox 项目的日志收集代理
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # 系统日志
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: varlogs
+          __path__: /var/log/*log
+
+  # Docker 容器日志
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*log
+
+    pipeline_stages:
+      - json:
+          expressions:
+            output: log
+            stream: stream
+            attrs: attrs
+            tag: attrs.tag
+
+      - json:
+          expressions:
+            container_name: name
+            image: image
+            image_id: image_id
+            container_id: id
+          source: attrs
+
+      - labels:
+          container_name:
+          image:
+          image_id:
+          container_id:
+          stream:
+
+      - output:
+          source: output
+
+  # QuickBox 应用日志
+  - job_name: quickbox-app
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: quickbox-app
+          __path__: /var/log/quickbox/*.log
+
+  # Nginx 访问日志
+  - job_name: nginx-access
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx-access
+          __path__: /var/log/nginx/access.log
+
+  # Nginx 错误日志
+  - job_name: nginx-error
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx-error
+          __path__: /var/log/nginx/error.log
+
+  # Redis 日志
+  - job_name: redis
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: redis
+          __path__: /var/log/redis/*.log
+
+  # MinIO 日志
+  - job_name: minio
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: minio
+          __path__: /var/log/minio/*.log

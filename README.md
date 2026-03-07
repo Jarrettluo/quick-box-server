@@ -4,7 +4,7 @@ QuickBox（快取柜）后端是一个临时文件共享服务的服务器端实
 
 ## ✨ 功能特性
 
-- **分片上传**：支持大文件分片上传（适配vue-simple-uploader）
+- **分片上传**：支持大文件分片上传（5MB分片，适配前端实现）
 - **文件合并**：自动合并分片文件为完整文件
 - **取件码管理**：生成6位唯一取件码，支持Redis缓存和过期管理
 - **文件下载**：通过取件码下载文件（单次使用）
@@ -15,6 +15,7 @@ QuickBox（快取柜）后端是一个临时文件共享服务的服务器端实
 - **多存储后端支持**：抽象存储层，支持本地文件系统、S3/MinIO对象存储
 - **Docker容器化部署**：完整的容器化部署方案，支持生产环境
 - **存储管理API**：存储后端管理和监控功能
+- **文件验证**：支持文件类型检查和大小限制
 
 ## 🛠️ 技术栈
 
@@ -111,6 +112,11 @@ folder.upload.max-total-size=10GB
 folder.upload.max-files=1000
 folder.upload.auto-zip=true
 folder.upload.keep-structure=true
+
+# 文件验证配置
+file.upload.max-size=50GB
+file.upload.allowed-types=*
+file.upload.blocked-types=application/x-executable,application/x-dosexec
 ```
 
 ### 启动方式
@@ -158,6 +164,7 @@ cd quick-box-server/deploy
    {
      "filename": "example.zip",
      "totalSize": 10485760,
+     "chunkSize": 5242880,
      "totalChunks": 5
    }
    ```
@@ -178,17 +185,17 @@ cd quick-box-server/deploy
    ```
    POST /api/upload/upload
    ```
-   参数：
-   ```json
-   {
-     "uploadId": "ABCDEF",
-     "chunkNumber": 3,
-     "totalChunks": 5,
-     "filename": "example.zip",
-     "totalSize": 10485760,
-     "file": "分片文件"
-   }
-   ```
+   参数（FormData）：
+   - uploadId: 上传会话ID
+   - chunkNumber: 分片序号
+   - chunkSize: 分片大小
+   - currentChunkSize: 当前分片实际大小
+   - totalChunks: 总分片数
+   - totalSize: 文件总大小
+   - filename: 文件名
+   - contentType: 文件类型
+   - file: 分片文件内容
+
    响应：
    ```json
    {
@@ -258,15 +265,60 @@ cd quick-box-server/deploy
    ```
    POST /api/upload/folder/init
    ```
+   请求体：
+   ```json
+   {
+     "folderName": "my_folder",
+     "totalFiles": 5,
+     "totalSize": 10485760,
+     "structureJson": "{\"files\": [...]}",
+     "autoZip": true,
+     "keepStructure": true,
+     "metadata": "{...}"
+   }
+   ```
+   响应：
+   ```json
+   {
+     "code": 200,
+     "message": "success",
+     "data": {
+       "sessionId": "FOLDER123",
+       "folderId": "FOLDER_ABC123",
+       "accessCode": "XYZ789"
+     }
+   }
+   ```
 
 2. **上传文件夹分片**
    ```
    POST /api/upload/folder/chunk
    ```
+   参数（FormData）：
+   - sessionId: 会话ID
+   - chunkNumber: 分片序号
+   - totalChunks: 总分片数
+   - chunkSize: 分片大小
+   - currentChunkSize: 当前分片大小
+   - totalSize: 总大小
+   - identifier: 文件标识符
+   - filename: 文件名
+   - relativePath: 文件相对路径
+   - isZipUpload: 是否为ZIP上传
+   - zipFileIndex: ZIP文件索引
+   - zipTotalChunks: ZIP总分片数
+   - metadata: 元数据
+   - file: 分片文件
 
 3. **合并文件夹分片**
    ```
    POST /api/upload/folder/merge
+   ```
+   参数：
+   ```json
+   {
+     "sessionId": "FOLDER123"
+   }
    ```
 
 4. **获取文件夹信息**
@@ -278,11 +330,17 @@ cd quick-box-server/deploy
    ```
    GET /api/upload/folder/download/{accessCode}
    ```
+   响应：
+   - ZIP压缩包下载
+   - 自动设置Content-Disposition头
+   - 下载后文件夹自动删除
 
 6. **下载文件夹中的文件**
    ```
    GET /api/upload/folder/file/{accessCode}
    ```
+   参数：
+   - path: 文件路径（相对于文件夹根目录）
 
 ### 存储管理API
 
@@ -504,6 +562,13 @@ docker-compose -f docker-compose.prod.yml up -d
 - 检查Redis中键是否存在：`redis-cli keys "*"`
 - 验证取件码是否已使用（下载后删除）
 - 检查过期时间设置
+
+#### 5. 文件夹上传失败
+**症状**：文件夹上传过程中失败
+**解决**：
+- 检查文件夹结构是否符合规范
+- 验证文件权限和磁盘空间
+- 查看应用日志中的错误信息
 
 ## 📄 许可证
 

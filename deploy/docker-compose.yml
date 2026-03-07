@@ -74,6 +74,22 @@ services:
       timeout: 20s
       retries: 3
 
+  # 前端应用服务
+  frontend:
+    build: ./docker/frontend
+    container_name: quickbox-frontend
+    restart: unless-stopped
+    volumes:
+      - frontend_build:/app/build
+    networks:
+      - quickbox-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   # Nginx 反向代理（可选）
   nginx:
     image: nginx:alpine
@@ -85,8 +101,10 @@ services:
     volumes:
       - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./config/ssl:/etc/nginx/ssl:ro
+      - frontend_build:/usr/share/nginx/html:ro
     depends_on:
       - quickbox
+      - frontend
     networks:
       - quickbox-network
 
@@ -142,6 +160,8 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  frontend_build:
     driver: local
 
 # 网络定义

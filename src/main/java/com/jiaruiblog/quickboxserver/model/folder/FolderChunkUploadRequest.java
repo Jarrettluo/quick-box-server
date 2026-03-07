@@ -86,7 +86,7 @@ public class FolderChunkUploadRequest {
             throw new IllegalArgumentException("上传会话ID不能为空");
         }
 
-        if (chunkNumber == null || chunkNumber < 0) {
+        if (chunkNumber == null || chunkNumber < 1) {
             throw new IllegalArgumentException("分片序号无效");
         }
 
@@ -94,8 +94,8 @@ public class FolderChunkUploadRequest {
             throw new IllegalArgumentException("总分片数必须大于0");
         }
 
-        if (chunkNumber >= totalChunks) {
-            throw new IllegalArgumentException("分片序号不能大于等于总分片数");
+        if (chunkNumber > totalChunks) {
+            throw new IllegalArgumentException("分片序号不能大于总分片数");
         }
 
         if (chunkSize == null || chunkSize <= 0) {
@@ -131,10 +131,12 @@ public class FolderChunkUploadRequest {
         }
 
         if (isZipUpload) {
-            if (zipFileIndex == null || zipFileIndex < 0) {
+            // ZIP上传时，zipFileIndex和zipTotalChunks参数是可选的，只有在分块上传ZIP文件时才需要
+            // 对于单个文件的ZIP上传，这些参数可能不存在
+            if (zipFileIndex != null && zipFileIndex < 0) {
                 throw new IllegalArgumentException("ZIP文件索引无效");
             }
-            if (zipTotalChunks == null || zipTotalChunks <= 0) {
+            if (zipTotalChunks != null && zipTotalChunks <= 0) {
                 throw new IllegalArgumentException("ZIP总分片数必须大于0");
             }
         }
@@ -147,7 +149,7 @@ public class FolderChunkUploadRequest {
         if (totalChunks == null || totalChunks <= 0) {
             return 0.0;
         }
-        return ((chunkNumber + 1) * 100.0) / totalChunks;
+        return (chunkNumber * 100.0) / totalChunks;
     }
 
     /**
@@ -158,7 +160,7 @@ public class FolderChunkUploadRequest {
             return 0.0;
         }
 
-        long uploadedSize = (long) chunkNumber * chunkSize + currentChunkSize;
+        long uploadedSize = (long) (chunkNumber - 1) * chunkSize + currentChunkSize;
         return (uploadedSize * 100.0) / totalSize;
     }
 
@@ -166,7 +168,7 @@ public class FolderChunkUploadRequest {
      * 获取已上传大小
      */
     public Long getUploadedSize() {
-        return (long) chunkNumber * chunkSize + currentChunkSize;
+        return (long) (chunkNumber - 1) * chunkSize + currentChunkSize;
     }
 
     /**
@@ -186,7 +188,7 @@ public class FolderChunkUploadRequest {
         if (totalChunks == null) {
             return 0;
         }
-        return Math.max(0, totalChunks - chunkNumber - 1);
+        return Math.max(0, totalChunks - chunkNumber);
     }
 
     /**
@@ -196,7 +198,7 @@ public class FolderChunkUploadRequest {
         if (totalChunks == null) {
             return false;
         }
-        return chunkNumber == totalChunks - 1;
+        return chunkNumber == totalChunks;
     }
 
     /**

@@ -1,0 +1,15 @@
+# Grafana 仪表板自动加载配置
+apiVersion: 1
+
+providers:
+  # 使用文件夹配置自动加载仪表板
+  - name: 'QuickBox Dashboards'
+    orgId: 1
+    folder: ''
+    folderUid: ''
+    type: 'file'
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: true

@@ -62,10 +62,14 @@ public class FileUploadServiceImpl implements FileUploadService {
         );
 
         // 3. Create chunk directory
-        String chunkPath = fileStorageConfig.getFullChunksPath() + "/" + accessCode;
-        boolean mkdir = new File(chunkPath).mkdirs();
-        if (!mkdir) {
-            throw new BusinessException(ErrorCode.OPERATE_FAILED);
+        String chunkPath = fileStorageConfig.getChunkPathWithAccessCode(accessCode);
+        File chunkDir = new File(chunkPath);
+        if (!chunkDir.exists()) {
+            boolean mkdir = chunkDir.mkdirs();
+            if (!mkdir) {
+                log.error("Failed to create chunk directory: {}", chunkPath);
+                throw new BusinessException(ErrorCode.OPERATE_FAILED);
+            }
         }
 
         // 4. Persist file metadata to chunk directory
@@ -91,9 +95,11 @@ public class FileUploadServiceImpl implements FileUploadService {
         // 5. Set expiration
         LocalDateTime expires = LocalDateTime.now().plusHours(fileStorageConfig.getSessionExpirationHours());
 
+        // 返回绝对路径，确保前端和后端路径一致性
+        String absoluteChunkPath = new File(chunkPath).getAbsolutePath();
         return new UploadSession(
                 accessCode,
-                chunkPath,
+                absoluteChunkPath,
                 expires
         );
     }
@@ -107,8 +113,27 @@ public class FileUploadServiceImpl implements FileUploadService {
             }
 
             // 2. Save chunk to target location
-            String chunkPath = fileStorageConfig.getFullChunksPath() + "/" + request.uploadId();
-            File chunkFile = new File(chunkPath, request.chunkNumber().toString());
+            String chunkPath = fileStorageConfig.getChunkPathWithAccessCode(request.uploadId());
+            File chunkDir = new File(chunkPath);
+
+            // 确保目录存在
+            if (!chunkDir.exists()) {
+                boolean mkdirs = chunkDir.mkdirs();
+                if (!mkdirs) {
+                    log.error("Failed to create chunk directory: {}", chunkPath);
+                    throw new BusinessException(ErrorCode.OPERATE_FAILED);
+                }
+            }
+
+            File chunkFile = new File(chunkDir, request.chunkNumber().toString());
+
+            // 使用绝对路径确保文件保存到正确位置
+            log.debug("Saving chunk file to absolute path: {}", chunkFile.getAbsolutePath());
+
+            // 确保父目录存在
+            if (!chunkFile.getParentFile().exists()) {
+                chunkFile.getParentFile().mkdirs();
+            }
 
             file.transferTo(chunkFile);
 
@@ -116,14 +141,14 @@ public class FileUploadServiceImpl implements FileUploadService {
             return getUploadProgress(request.uploadId(), request.chunkNumber());
 
         } catch (IOException e) {
-            log.error("upload chunk file is error, error msg: {}", e.getMessage(), e.getCause());
+            log.error("upload chunk file is error, error msg: {}", e.getMessage(), e);
             throw new BusinessException(ErrorCode.OPERATE_FAILED);
         }
     }
 
     public UploadProgress getUploadProgress(String accessCode, Integer chunkNumber) {
         // 1. Get chunk directory
-        String chunkPath = fileStorageConfig.getFullChunksPath() + "/" + accessCode;
+        String chunkPath = fileStorageConfig.getChunkPathWithAccessCode(accessCode);
         File chunkDir = new File(chunkPath);
 
         // 2. List all uploaded chunks
@@ -158,8 +183,8 @@ public class FileUploadServiceImpl implements FileUploadService {
     public String mergeChunks(String identifier) {
         System.out.println(identifier + "=================");
         // 1. Prepare paths
-        String chunkDirPath = fileStorageConfig.getFullChunksPath() + "/" + identifier;
-        String finalDirPath = fileStorageConfig.getFullFinalPath() + "/" + identifier;
+        String chunkDirPath = fileStorageConfig.getChunkPathWithAccessCode(identifier);
+        String finalDirPath = fileStorageConfig.getFinalPathWithAccessCode(identifier);
         System.out.println(chunkDirPath);
         System.out.println(finalDirPath);
         // Check if directory already exists
@@ -269,7 +294,7 @@ public class FileUploadServiceImpl implements FileUploadService {
             throw new IllegalArgumentException("Invalid or expired access code");
         }
 
-        File uploadDir = new File(fileStorageConfig.getFullFinalPath() + "/" + accessCode);
+        File uploadDir = new File(fileStorageConfig.getFinalPathWithAccessCode(accessCode));
         if (!uploadDir.exists()) {
             throw new IllegalArgumentException("Invalid access code");
         }

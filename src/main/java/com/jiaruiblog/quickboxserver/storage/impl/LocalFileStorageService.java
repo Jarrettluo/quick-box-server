@@ -399,6 +399,19 @@ public class LocalFileStorageService extends AbstractStorageService {
             String metadataJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(sessionMetadata);
             Files.writeString(sessionDir.resolve("metadata.json"), metadataJson);
 
+            // 创建并保存上传会话（重要：修复会话不存在问题）
+            UploadSession session = new UploadSession();
+            session.setSessionId(sessionId);
+            session.setFileId(folderId);
+            session.setFileName(folderName);
+            session.setFileSize(totalSize);
+            session.setCreateTime(LocalDateTime.now());
+            session.setChunkCount(0);
+            session.setUploadedChunks(new HashSet<>());
+
+            // 保存到上传会话列表
+            uploadSessions.put(sessionId, session);
+
             log.info("初始化文件夹上传会话: {} -> {} ({} files, {} bytes)",
                 sessionId, folderName, totalFiles, totalSize);
             return sessionId;
@@ -815,20 +828,44 @@ public class LocalFileStorageService extends AbstractStorageService {
     }
 
     private void extractZipFile(Path zipFile, Path targetDir) throws IOException {
+        log.info("开始解压ZIP文件: {} 到目标路径: {}", zipFile, targetDir);
+
+        // 检查ZIP文件是否存在且非空
+        if (!Files.exists(zipFile)) {
+            throw new FileNotFoundException("ZIP文件不存在: " + zipFile);
+        }
+
+        long zipSize = Files.size(zipFile);
+        log.info("ZIP文件大小: {} 字节", zipSize);
+
+        if (zipSize == 0) {
+            throw new IOException("ZIP文件是空的");
+        }
+
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipFile))) {
             ZipEntry entry;
+            int extractedCount = 0;
+
             while ((entry = zis.getNextEntry()) != null) {
+                log.info("解压条目: {} (大小: {} 字节, 是目录: {})",
+                    entry.getName(), entry.getSize(), entry.isDirectory());
+
                 Path entryPath = targetDir.resolve(entry.getName());
 
                 if (entry.isDirectory()) {
                     Files.createDirectories(entryPath);
                 } else {
                     Files.createDirectories(entryPath.getParent());
-                    Files.copy(zis, entryPath, StandardCopyOption.REPLACE_EXISTING);
+                    long copied = Files.copy(zis, entryPath, StandardCopyOption.REPLACE_EXISTING);
+                    log.info("成功解压文件: {} 到 {}，大小: {} 字节",
+                        entry.getName(), entryPath, copied);
+                    extractedCount++;
                 }
 
                 zis.closeEntry();
             }
+
+            log.info("ZIP文件解压完成，共解压 {} 个条目", extractedCount);
         }
     }
 

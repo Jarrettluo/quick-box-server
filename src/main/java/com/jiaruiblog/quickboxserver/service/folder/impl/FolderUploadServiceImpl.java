@@ -38,7 +38,9 @@ public class FolderUploadServiceImpl implements FolderUploadService {
     @Autowired
     private ConfigurableStorageStrategy storageStrategy;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+            .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     private final Map<String, FolderUploadSession> uploadSessions = new ConcurrentHashMap<>();
     private final Map<String, FolderInfo> folderInfos = new ConcurrentHashMap<>();
     private final List<FolderEventListener> listeners = new CopyOnWriteArrayList<>();
@@ -147,7 +149,8 @@ public class FolderUploadServiceImpl implements FolderUploadService {
 
             // 检查会话状态
             if (session.getStatus() != FolderUploadResponse.UploadStatus.INITIALIZED &&
-                session.getStatus() != FolderUploadResponse.UploadStatus.UPLOADING) {
+                session.getStatus() != FolderUploadResponse.UploadStatus.UPLOADING &&
+                session.getStatus() != FolderUploadResponse.UploadStatus.MERGING) {
                 throw new BusinessException(ErrorCode.SESSION_INVALID_STATE);
             }
 
