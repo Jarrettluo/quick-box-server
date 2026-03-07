@@ -1,8 +1,11 @@
 package com.jiaruiblog.quickboxserver.storage.model;
 
+import lombok.Getter;
+
 /**
  * 存储类型枚举
  */
+@Getter
 public enum StorageType {
     LOCAL("local", "本地文件系统"),
     S3("s3", "S3对象存储"),
@@ -17,14 +20,6 @@ public enum StorageType {
     StorageType(String code, String description) {
         this.code = code;
         this.description = description;
-    }
-
-    public String getCode() {
-        return code;
-    }
-
-    public String getDescription() {
-        return description;
     }
 
     public static StorageType fromCode(String code) {
