@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn compile:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(chmod:*)",
+      "Bash(java:*)",
+      "Bash(mvn:*)",
+      "Bash(find:*)",
+      "Bash(git push:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(./mvnw.cmd clean:*)",
+      "Bash(where:*)",
+      "Bash(echo:*)",
+      "Bash(do echo:*)"
+    ]
+  }
+}

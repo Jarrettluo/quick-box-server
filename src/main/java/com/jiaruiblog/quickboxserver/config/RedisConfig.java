@@ -1,5 +1,8 @@
 package com.jiaruiblog.quickboxserver.config;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -7,11 +10,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 /**
- * //@ConditionalOnClass(RedisOperations.class)
- * //@EnableConfigurationProperties(RedisProperties.class)
+ * Redis配置类
  *
  * @author luojiarui
  **/
@@ -21,22 +24,36 @@ public class RedisConfig {
 
     @Bean
     @ConditionalOnMissingBean(name = "redisTemplate")
-    public RedisTemplate<Object, Object> redisTemplate(
+    public RedisTemplate<String, Object> redisTemplate(
             RedisConnectionFactory redisConnectionFactory) {
-        // 创建RedisTemplate<String, Object>对象
-        RedisTemplate<Object, Object> template = new RedisTemplate<>();
-//        //使用fastjson序列化
-//        FastJsonRedisSerializer<Object> fastJsonRedisSerializer = new FastJsonRedisSerializer<>(Object.class);
-//
-//        // value值的序列化采用fastJsonRedisSerializer
-//        template.setValueSerializer(fastJsonRedisSerializer);
-//        template.setHashValueSerializer(fastJsonRedisSerializer);
 
-        // key的序列化采用StringRedisSerializer
-        template.setKeySerializer(new StringRedisSerializer());
-        template.setHashKeySerializer(new StringRedisSerializer());
+        RedisTemplate<String, Object> template = new RedisTemplate<>();
+
+        // 配置Jackson序列化
+        ObjectMapper objectMapper = new ObjectMapper();
+        // 启用类型信息，支持反序列化复杂对象
+        objectMapper.activateDefaultTyping(
+                LaissezFaireSubTypeValidator.instance,
+                ObjectMapper.DefaultTyping.NON_FINAL,
+                JsonTypeInfo.As.PROPERTY
+        );
+
+        GenericJackson2JsonRedisSerializer serializer =
+                new GenericJackson2JsonRedisSerializer(objectMapper);
+
+        // 设置key的序列化器
+        StringRedisSerializer stringSerializer = new StringRedisSerializer();
+        template.setKeySerializer(stringSerializer);
+        template.setHashKeySerializer(stringSerializer);
+
+        // 设置value的序列化器
+        template.setValueSerializer(serializer);
+        template.setHashValueSerializer(serializer);
+
         // 配置连接工厂
         template.setConnectionFactory(redisConnectionFactory);
+        template.afterPropertiesSet();
+
         return template;
     }
 
@@ -44,11 +61,6 @@ public class RedisConfig {
     @ConditionalOnMissingBean(StringRedisTemplate.class)
     public StringRedisTemplate stringRedisTemplate(
             RedisConnectionFactory redisConnectionFactory) {
-
-        StringRedisTemplate template = new StringRedisTemplate();
-
-        template.setConnectionFactory(redisConnectionFactory);
-        return template;
+        return new StringRedisTemplate(redisConnectionFactory);
     }
-
 }

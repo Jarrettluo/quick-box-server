@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### 项目文档 ###
+claude.md
+需求文档.md
+需求文档V2.md

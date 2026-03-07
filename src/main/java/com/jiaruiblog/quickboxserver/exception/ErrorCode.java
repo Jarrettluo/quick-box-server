@@ -81,7 +81,41 @@ public enum ErrorCode {
 
     // System Configuration
     CONFIG_NOT_FOUND(9001, "error-code.config-not-found"),
-    CONFIG_UPDATE_FAILED(9002, "error-code.config-update-failed");
+    CONFIG_UPDATE_FAILED(9002, "error-code.config-update-failed"),
+
+    // Upload Session Related
+    SESSION_NOT_FOUND(10001, "error-code.session-not-found"),
+    SESSION_EXPIRED(10002, "error-code.session-expired"),
+    SESSION_INVALID_STATE(10003, "error-code.session-invalid-state"),
+    SESSION_ALREADY_COMPLETED(10004, "error-code.session-already-completed"),
+
+    // Folder Related
+    FOLDER_NOT_FOUND(11001, "error-code.folder-not-found"),
+    FOLDER_UPLOAD_INIT_FAILED(11002, "error-code.folder-upload-init-failed"),
+    FOLDER_CHUNK_UPLOAD_FAILED(11003, "error-code.folder-chunk-upload-failed"),
+    FOLDER_MERGE_FAILED(11004, "error-code.folder-merge-failed"),
+    FOLDER_CANCEL_FAILED(11005, "error-code.folder-cancel-failed"),
+    FOLDER_INFO_FAILED(11006, "error-code.folder-info-failed"),
+    FOLDER_DOWNLOAD_FAILED(11007, "error-code.folder-download-failed"),
+    FOLDER_ALREADY_DOWNLOADED(11008, "error-code.folder-already-downloaded"),
+    FOLDER_EXPIRED(11009, "error-code.folder-expired"),
+    FOLDER_DELETE_FAILED(11010, "error-code.folder-delete-failed"),
+    INVALID_FOLDER_NAME(11011, "error-code.invalid-folder-name"),
+    FOLDER_SIZE_EXCEEDED(11012, "error-code.folder-size-exceeded"),
+    FOLDER_FILE_COUNT_EXCEEDED(11013, "error-code.folder-file-count-exceeded"),
+
+    // Storage Related
+    STORAGE_SERVICE_NOT_FOUND(12001, "error-code.storage-service-not-found"),
+    STORAGE_SERVICE_UNAVAILABLE(12002, "error-code.storage-service-unavailable"),
+    STORAGE_CONFIG_ERROR(12003, "error-code.storage-config-error"),
+    STORAGE_OPERATION_FAILED(12004, "error-code.storage-operation-failed"),
+    STORAGE_SPACE_INSUFFICIENT(12005, "error-code.storage-space-insufficient"),
+
+    // ZIP Related
+    ZIP_CREATION_FAILED(13001, "error-code.zip-creation-failed"),
+    ZIP_EXTRACTION_FAILED(13002, "error-code.zip-extraction-failed"),
+    INVALID_ZIP_FORMAT(13003, "error-code.invalid-zip-format"),
+    ZIP_SIZE_EXCEEDED(13004, "error-code.zip-size-exceeded");
 
 
     private final Integer code;

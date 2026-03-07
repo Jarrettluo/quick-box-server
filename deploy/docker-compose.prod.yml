@@ -1,0 +1,187 @@
+version: '3.8'
+
+services:
+  # QuickBox 应用服务（生产环境）
+  quickbox:
+    build: .
+    container_name: quickbox-app-prod
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=production
+      - SERVER_PORT=8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - FILE_STORAGE_BASE_PATH=/data/storage
+      - STORAGE_STRATEGY_TYPE=PRIMARY_BACKUP
+      - STORAGE_PRIMARY_BACKEND=local
+      - STORAGE_BACKUP_BACKENDS=s3
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_REGION=${S3_REGION}
+      - JAVA_OPTS=-Xmx2g -Xms1g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ParallelRefProcEnabled -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/dumps -XX:ErrorFile=/data/logs/hs_err_pid%p.log -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/data/logs/gc.log
+      - WAIT_FOR_HOSTS=redis:6379
+    volumes:
+      - /mnt/storage/quickbox:/data/storage
+      - /var/log/quickbox:/data/logs
+    depends_on:
+      - redis
+    networks:
+      - quickbox-network-prod
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: '2'
+        reservations:
+          memory: 2g
+          cpus: '1'
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+
+  # Redis 集群（生产环境）
+  redis:
+    image: redis:7-alpine
+    container_name: quickbox-redis-prod
+    restart: always
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - /mnt/redis/data:/data
+      - /mnt/redis/conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - quickbox-network-prod
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: '1'
+        reservations:
+          memory: 1g
+          cpus: '0.5'
+
+  # Nginx 负载均衡器（生产环境）
+  nginx:
+    image: nginx:alpine
+    container_name: quickbox-nginx-prod
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/log/nginx:/var/log/nginx
+    depends_on:
+      - quickbox
+    networks:
+      - quickbox-network-prod
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: '0.5'
+
+  # 监控代理（生产环境）
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: quickbox-node-exporter
+    restart: always
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - quickbox-network-prod
+
+  # 日志收集器（生产环境）
+  loki:
+    image: grafana/loki:latest
+    container_name: quickbox-loki
+    restart: always
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - /mnt/loki:/loki
+      - ./config/loki.yaml:/etc/loki/local-config.yaml:ro
+    networks:
+      - quickbox-network-prod
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: quickbox-promtail
+    restart: always
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./config/promtail.yaml:/etc/promtail/config.yaml:ro
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - quickbox-network-prod
+
+# 数据卷定义（生产环境使用主机目录）
+# volumes:
+#   quickbox_data:
+#     driver: local
+#     driver_opts:
+#       type: none
+#       o: bind
+#       device: /mnt/storage/quickbox
+#   redis_data:
+#     driver: local
+#     driver_opts:
+#       type: none
+#       o: bind
+#       device: /mnt/redis/data
+
+# 网络定义（生产环境）
+networks:
+  quickbox-network-prod:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: br-quickbox-prod
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.bridge.enable_icc: "true"
