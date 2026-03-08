@@ -203,7 +203,6 @@ public class ConfigurableStorageStrategy implements StorageStrategy {
 
         try {
             StorageService selectedService = switch (currentStrategyType) {
-                case PRIMARY_BACKUP -> selectByPrimaryBackup();
                 case LOAD_BALANCE -> selectByLoadBalance();
                 default -> selectByPrimaryBackup();
             };

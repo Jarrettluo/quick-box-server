@@ -78,13 +78,12 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             // 生成文件夹ID和取件码
             String folderId = UUID.randomUUID().toString();
             String accessCode = generateAccessCode();
-            String sessionId = UUID.randomUUID().toString();
 
             // 选择存储服务
             StorageService storageService = storageStrategy.selectStorageServiceForFolder();
 
             // 初始化文件夹上传会话
-            String storageSessionId = storageService.initFolderUpload(
+            String sessionId = storageService.initFolderUpload(
                 folderId,
                 request.getFolderName(),
                 request.getTotalFiles(),
@@ -94,8 +93,9 @@ public class FolderUploadServiceImpl implements FolderUploadService {
 
             // 创建上传会话
             FolderUploadSession session = new FolderUploadSession();
+            // 存入会话的id，以便下次上传的时候可以取到
             session.setSessionId(sessionId);
-            session.setStorageSessionId(storageSessionId);
+
             session.setFolderId(folderId);
             session.setFolderName(request.getFolderName());
             session.setAccessCode(accessCode);
@@ -140,7 +140,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
 
     @Override
     public FolderUploadResponse uploadFolderChunk(FolderChunkUploadRequest request) {
-        log.debug("上传文件夹分片: {} - {}", request.getSessionId(), request.getChunkNumber());
+        log.info("上传文件夹分片: {} - {}", request.getSessionId(), request.getChunkNumber());
 
         try {
             // 获取上传会话
@@ -164,8 +164,9 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             session.setLastUpdateTime(LocalDateTime.now());
 
             // 上传分片
+            // TODO，前端是一个文件一个文件的分片过来的；导致后端在生成chunk的时候必须按照单个文件的identify进行区分
             storageService.uploadFolderChunk(
-                session.getStorageSessionId(),
+                session.getSessionId(),
                 request.getChunkNumber(),
                 request.getFile().getInputStream(),
                 request.getCurrentChunkSize()
@@ -223,7 +224,8 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             StorageService storageService = storageServiceFactory.getStorageService(session.getStorageBackend());
 
             // 合并分片
-            String folderPath = storageService.mergeFolderChunks(session.getStorageSessionId());
+            log.info("合并文件夹的时候的session_id: {}", sessionId);
+            String folderPath = storageService.mergeFolderChunks(session.getSessionId());
 
             // 更新会话状态
             session.setStatus(FolderUploadResponse.UploadStatus.COMPLETED);

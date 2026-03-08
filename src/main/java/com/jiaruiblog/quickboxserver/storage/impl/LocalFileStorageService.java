@@ -85,6 +85,8 @@ public class LocalFileStorageService extends AbstractStorageService {
         String sessionId = UUID.randomUUID().toString();
         Path sessionDir = chunkPath.resolve(sessionId);
 
+        log.info("session dir: {}", sessionDir);
+
         try {
             Files.createDirectories(sessionDir);
 
@@ -126,7 +128,8 @@ public class LocalFileStorageService extends AbstractStorageService {
 
         UploadSession session = uploadSessions.get(sessionId);
         Path chunkFile = chunkPath.resolve(sessionId).resolve(String.valueOf(chunkNumber));
-
+        log.info("上传的时候chunkPath是：{}", chunkPath);
+        log.info("分片的上传路径是：{}", chunkFile.toAbsolutePath().toString());
         try {
             // 使用文件锁确保并发安全
             ReentrantLock lock = fileLocks.computeIfAbsent(sessionId, k -> new ReentrantLock());
@@ -135,7 +138,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             try {
                 // 检查分片是否已上传
                 if (session.getUploadedChunks().contains(chunkNumber)) {
-                    log.debug("分片已上传: {} - {}", sessionId, chunkNumber);
+                    log.info("分片已上传: {} - {}", sessionId, chunkNumber);
                     return;
                 }
 
@@ -148,7 +151,7 @@ public class LocalFileStorageService extends AbstractStorageService {
                 session.setUploadedSize(session.getUploadedSize() + chunkSize);
                 session.setLastUpdateTime(LocalDateTime.now());
 
-                log.debug("上传文件分片成功: {} - {} ({} bytes)", sessionId, chunkNumber, chunkSize);
+                log.info("上传文件分片成功: {} - {} ({} bytes)", sessionId, chunkNumber, chunkSize);
 
                 // 触发事件
                 FileInfo fileInfo = createFileInfoFromSession(session);
@@ -162,6 +165,11 @@ public class LocalFileStorageService extends AbstractStorageService {
         }
     }
 
+    /***
+     * <p>合并分片？</p>
+     * @param sessionId
+     * @return java.lang.String
+     **/
     @Override
     public String mergeFileChunks(String sessionId) {
         validateUploadSession(sessionId);
@@ -423,18 +431,22 @@ public class LocalFileStorageService extends AbstractStorageService {
 
     @Override
     public void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize) {
+        log.info("进入本地上传子类里面了,{}, chunkNumber:{}, 分片大小 {}", sessionId, chunkNumber, chunkSize);
         // 文件夹上传使用ZIP格式，处理方式与文件相同
         uploadFileChunk(sessionId, chunkNumber, chunkData, chunkSize);
     }
 
     @Override
     public String mergeFolderChunks(String sessionId) {
+        log.info("合并的时候取到的chunk {}, ssessionId:{}", chunkPath, sessionId);
         Path sessionDir = chunkPath.resolve(sessionId);
         Path metadataFile = sessionDir.resolve("metadata.json");
 
         try {
             // 读取文件夹元数据
             String metadataJson = Files.readString(metadataFile);
+            log.info("哪里来的mestaJons:{}", metadataJson);
+
             Map<String, Object> metadata = new com.fasterxml.jackson.databind.ObjectMapper().readValue(metadataJson, Map.class);
 
             String folderId = (String) metadata.get("folderId");
@@ -471,8 +483,8 @@ public class LocalFileStorageService extends AbstractStorageService {
                 }
             }
 
-            // 解压ZIP文件
-            extractZipFile(zipFile, finalFolder);
+            // 解压ZIP文件, 为啥要解压，奇奇怪怪的
+//            extractZipFile(zipFile, finalFolder);
 
             // 保存文件夹结构信息
             String structureJson = (String) metadata.get("structureJson");
@@ -487,7 +499,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             Files.writeString(finalFolder.resolve("metadata.json"), updatedMetadataJson);
 
             // 清理分片文件
-            cleanupChunkFiles(sessionId);
+//            cleanupChunkFiles(sessionId);
 
             String folderPathStr = finalFolder.toString();
             log.info("合并文件夹分片成功: {} -> {} ({} files)", sessionId, folderPathStr, metadata.get("totalFiles"));
