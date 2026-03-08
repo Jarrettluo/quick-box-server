@@ -3,20 +3,26 @@ package com.jiaruiblog.quickboxserver.service.folder.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jiaruiblog.quickboxserver.exception.BusinessException;
 import com.jiaruiblog.quickboxserver.exception.ErrorCode;
-import com.jiaruiblog.quickboxserver.model.folder.*;
+import com.jiaruiblog.quickboxserver.model.folder.FolderChunkUploadRequest;
+import com.jiaruiblog.quickboxserver.model.folder.FolderInfoResponse;
+import com.jiaruiblog.quickboxserver.model.folder.FolderUploadRequest;
+import com.jiaruiblog.quickboxserver.model.folder.FolderUploadResponse;
 import com.jiaruiblog.quickboxserver.service.folder.FolderUploadService;
 import com.jiaruiblog.quickboxserver.storage.StorageService;
 import com.jiaruiblog.quickboxserver.storage.StorageServiceFactory;
 import com.jiaruiblog.quickboxserver.storage.strategy.ConfigurableStorageStrategy;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -25,36 +31,43 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * 文件夹上传服务实现
  */
+@AllArgsConstructor
 @Slf4j
 @Service
 public class FolderUploadServiceImpl implements FolderUploadService {
 
-    @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
-    @Autowired
     private StorageServiceFactory storageServiceFactory;
 
-    @Autowired
     private ConfigurableStorageStrategy storageStrategy;
 
     private final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
             .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
     private final Map<String, FolderUploadSession> uploadSessions = new ConcurrentHashMap<>();
+
     private final Map<String, FolderInfo> folderInfos = new ConcurrentHashMap<>();
+
     private final List<FolderEventListener> listeners = new CopyOnWriteArrayList<>();
 
     private final AtomicLong totalFolders = new AtomicLong(0);
+
     private final AtomicLong totalFiles = new AtomicLong(0);
+
     private final AtomicLong totalSize = new AtomicLong(0);
+
     private final AtomicLong activeUploads = new AtomicLong(0);
+
     private final AtomicLong completedUploads = new AtomicLong(0);
-    private final AtomicLong failedUploads = new AtomicLong(0);
+
 
     // Redis键前缀
     private static final String REDIS_PREFIX_FOLDER = "folder:";
+
     private static final String REDIS_PREFIX_SESSION = "folder_session:";
+
     private static final String REDIS_PREFIX_ACCESS_CODE = "access_code:";
 
     @Override
@@ -62,21 +75,13 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         log.info("初始化文件夹上传: {}", request.getFolderName());
 
         try {
-            // 验证请求参数
-            request.validate();
-
             // 生成文件夹ID和取件码
             String folderId = UUID.randomUUID().toString();
             String accessCode = generateAccessCode();
             String sessionId = UUID.randomUUID().toString();
 
             // 选择存储服务
-            StorageService storageService = storageStrategy.selectStorageServiceForFolder(
-                request.getFolderName(),
-                request.getTotalFiles(),
-                request.getTotalSize(),
-                request.getStructureJson()
-            );
+            StorageService storageService = storageStrategy.selectStorageServiceForFolder();
 
             // 初始化文件夹上传会话
             String storageSessionId = storageService.initFolderUpload(
@@ -138,9 +143,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         log.debug("上传文件夹分片: {} - {}", request.getSessionId(), request.getChunkNumber());
 
         try {
-            // 验证请求参数
-            request.validate();
-
             // 获取上传会话
             FolderUploadSession session = getSession(request.getSessionId());
             if (session == null) {

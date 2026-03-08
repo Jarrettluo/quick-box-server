@@ -1,13 +1,17 @@
 package com.jiaruiblog.quickboxserver.controller;
 
 import com.jiaruiblog.quickboxserver.common.ApiResult;
-import com.jiaruiblog.quickboxserver.model.folder.*;
+import com.jiaruiblog.quickboxserver.model.folder.FolderChunkUploadRequest;
+import com.jiaruiblog.quickboxserver.model.folder.FolderInfoResponse;
+import com.jiaruiblog.quickboxserver.model.folder.FolderUploadRequest;
+import com.jiaruiblog.quickboxserver.model.folder.FolderUploadResponse;
 import com.jiaruiblog.quickboxserver.service.folder.FolderUploadService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -16,7 +20,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import jakarta.servlet.http.HttpServletRequest;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -24,13 +27,13 @@ import java.nio.charset.StandardCharsets;
 /**
  * 文件夹上传控制器
  */
+@AllArgsConstructor
 @Slf4j
 @RestController
 @RequestMapping("/api/upload/folder")
 @Tag(name = "文件夹上传", description = "文件夹上传和管理API")
 public class FolderUploadController {
 
-    @Autowired
     private FolderUploadService folderUploadService;
 
     @Operation(summary = "初始化文件夹上传", description = "创建文件夹上传会话")
@@ -38,6 +41,7 @@ public class FolderUploadController {
     public ApiResult<FolderUploadResponse> initFolderUpload(
             @RequestBody FolderUploadRequest request,
             HttpServletRequest httpRequest) {
+
         log.info("收到文件夹上传初始化请求: {}", request.getFolderName());
 
         try {
@@ -333,36 +337,9 @@ public class FolderUploadController {
         }
     }
 
-    @Operation(summary = "生成取件码", description = "生成新的取件码")
-    @GetMapping("/generate-code")
-    public ApiResult<String> generateAccessCode() {
-        log.debug("生成取件码");
-
-        try {
-            String accessCode = folderUploadService.generateAccessCode();
-            return ApiResult.success(accessCode);
-        } catch (Exception e) {
-            log.error("生成取件码失败", e);
-            return ApiResult.error(500, "生成取件码失败: " + e.getMessage());
-        }
-    }
-
-    @Operation(summary = "获取统计信息", description = "获取文件夹上传统计信息")
-    @GetMapping("/stats")
-    public ApiResult<Object> getFolderStats() {
-        log.debug("获取文件夹统计信息");
-
-        try {
-            FolderUploadService.FolderStats stats = folderUploadService.getFolderStats();
-            return ApiResult.success(stats);
-        } catch (Exception e) {
-            log.error("获取文件夹统计信息失败", e);
-            return ApiResult.error(500, "获取文件夹统计信息失败: " + e.getMessage());
-        }
-    }
-
     /**
      * 获取基础URL
+     * 这里是后端的请求地址
      */
     private String getBaseUrl(HttpServletRequest request) {
         String scheme = request.getScheme();

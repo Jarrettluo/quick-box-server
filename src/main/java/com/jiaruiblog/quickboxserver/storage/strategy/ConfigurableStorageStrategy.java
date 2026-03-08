@@ -3,12 +3,11 @@ package com.jiaruiblog.quickboxserver.storage.strategy;
 import com.jiaruiblog.quickboxserver.storage.StorageService;
 import com.jiaruiblog.quickboxserver.storage.StorageServiceFactory;
 import com.jiaruiblog.quickboxserver.storage.model.StorageStats;
-import com.jiaruiblog.quickboxserver.storage.model.StorageType;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -199,64 +198,41 @@ public class ConfigurableStorageStrategy implements StorageStrategy {
     }
 
     @Override
-    public StorageService selectStorageService(String fileName, long fileSize, Map<String, Object> metadata) {
+    public StorageService selectStorageService() {
         requestCount.incrementAndGet();
 
         try {
-            StorageService selectedService;
-
-            switch (currentStrategyType) {
-                case PRIMARY_BACKUP:
-                    selectedService = selectByPrimaryBackup(fileName, fileSize, metadata);
-                    break;
-                case LOAD_BALANCE:
-                    selectedService = selectByLoadBalance(fileName, fileSize, metadata);
-                    break;
-                case TIERED_STORAGE:
-                    selectedService = selectByTieredStorage(fileName, fileSize, metadata);
-                    break;
-                case GEO_LOCATION:
-                    selectedService = selectByGeoLocation(fileName, fileSize, metadata);
-                    break;
-                case CUSTOM:
-                    selectedService = selectByCustomRule(fileName, fileSize, metadata);
-                    break;
-                default:
-                    selectedService = selectByPrimaryBackup(fileName, fileSize, metadata);
-            }
+            StorageService selectedService = switch (currentStrategyType) {
+                case PRIMARY_BACKUP -> selectByPrimaryBackup();
+                case LOAD_BALANCE -> selectByLoadBalance();
+                default -> selectByPrimaryBackup();
+            };
 
             if (selectedService != null && selectedService.isAvailable()) {
                 successCount.incrementAndGet();
-                log.debug("选择存储服务: {} -> {}", fileName, selectedService.getStorageName());
+                log.debug("选择存储服务: -> {}", selectedService.getStorageName());
                 return selectedService;
             } else {
                 failureCount.incrementAndGet();
-                log.warn("无法选择可用的存储服务: {}", fileName);
+                log.warn("无法选择可用的存储服务");
                 throw new IllegalStateException("无法选择可用的存储服务");
             }
         } catch (Exception e) {
             failureCount.incrementAndGet();
-            log.error("选择存储服务失败: {}", fileName, e);
+            log.error("选择存储服务失败", e);
             throw e;
         }
     }
 
     @Override
-    public StorageService selectStorageServiceForFolder(String folderName, int totalFiles, long totalSize, String structureJson) {
-        // 文件夹选择策略可以更复杂，这里使用与文件相同的策略
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put("type", "folder");
-        metadata.put("totalFiles", totalFiles);
-        metadata.put("totalSize", totalSize);
-        metadata.put("structureJson", structureJson);
-
-        return selectStorageService(folderName, totalSize, metadata);
+    public StorageService selectStorageServiceForFolder() {
+        return selectStorageService();
     }
 
     /**
      * 主备模式选择
      */
-    private StorageService selectByPrimaryBackup(String fileName, long fileSize, Map<String, Object> metadata) {
+    private StorageService selectByPrimaryBackup() {
         // 首先尝试主存储服务
         if (primaryStorageService != null && primaryStorageService.isAvailable()) {
             return primaryStorageService;
@@ -265,7 +241,7 @@ public class ConfigurableStorageStrategy implements StorageStrategy {
         // 主服务不可用，尝试备份服务
         for (StorageService backupService : backupStorageServices) {
             if (backupService.isAvailable()) {
-                log.warn("主存储服务不可用，使用备份服务: {} -> {}", fileName, backupService.getStorageName());
+                log.warn("主存储服务不可用，使用备份服务: -> {}", backupService.getStorageName());
                 return backupService;
             }
         }
@@ -273,7 +249,7 @@ public class ConfigurableStorageStrategy implements StorageStrategy {
         // 所有备份服务都不可用，尝试其他可用服务
         for (StorageService service : allStorageServices) {
             if (service.isAvailable() && service != primaryStorageService && !backupStorageServices.contains(service)) {
-                log.warn("主备存储服务都不可用，使用其他可用服务: {} -> {}", fileName, service.getStorageName());
+                log.warn("主备存储服务都不可用，使用其他可用服务:  -> {}", service.getStorageName());
                 return service;
             }
         }
@@ -284,26 +260,19 @@ public class ConfigurableStorageStrategy implements StorageStrategy {
     /**
      * 负载均衡选择
      */
-    private StorageService selectByLoadBalance(String fileName, long fileSize, Map<String, Object> metadata) {
+    private StorageService selectByLoadBalance() {
         List<StorageService> availableServices = getAvailableStorageServices();
         if (availableServices.isEmpty()) {
             return null;
         }
 
-        switch (loadBalanceAlgorithm) {
-            case ROUND_ROBIN:
-                return selectByRoundRobin(availableServices);
-            case WEIGHTED_ROUND_ROBIN:
-                return selectByWeightedRoundRobin(availableServices);
-            case LEAST_CONNECTIONS:
-                return selectByLeastConnections(availableServices);
-            case RESPONSE_TIME:
-                return selectByResponseTime(availableServices);
-            case RANDOM:
-                return selectByRandom(availableServices);
-            default:
-                return selectByRoundRobin(availableServices);
-        }
+        return switch (loadBalanceAlgorithm) {
+            case ROUND_ROBIN -> selectByRoundRobin(availableServices);
+            case WEIGHTED_ROUND_ROBIN -> selectByWeightedRoundRobin(availableServices);
+            case LEAST_CONNECTIONS -> selectByLeastConnections(availableServices);
+            case RESPONSE_TIME -> selectByResponseTime(availableServices);
+            case RANDOM -> selectByRandom(availableServices);
+        };
     }
 
     /**
@@ -371,33 +340,6 @@ public class ConfigurableStorageStrategy implements StorageStrategy {
     private StorageService selectByRandom(List<StorageService> availableServices) {
         int index = (int) (Math.random() * availableServices.size());
         return availableServices.get(index);
-    }
-
-    /**
-     * 分级存储选择
-     */
-    private StorageService selectByTieredStorage(String fileName, long fileSize, Map<String, Object> metadata) {
-        // TODO: 实现分级存储策略
-        // 根据文件大小、类型等特征选择不同的存储层级
-        return selectByPrimaryBackup(fileName, fileSize, metadata);
-    }
-
-    /**
-     * 地理位置选择
-     */
-    private StorageService selectByGeoLocation(String fileName, long fileSize, Map<String, Object> metadata) {
-        // TODO: 实现地理位置策略
-        // 根据用户地理位置选择最近的存储服务
-        return selectByPrimaryBackup(fileName, fileSize, metadata);
-    }
-
-    /**
-     * 自定义规则选择
-     */
-    private StorageService selectByCustomRule(String fileName, long fileSize, Map<String, Object> metadata) {
-        // TODO: 实现自定义规则
-        // 允许用户自定义选择规则
-        return selectByPrimaryBackup(fileName, fileSize, metadata);
     }
 
     @Override

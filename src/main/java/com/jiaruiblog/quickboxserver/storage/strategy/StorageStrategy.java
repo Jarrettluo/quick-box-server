@@ -24,22 +24,15 @@ public interface StorageStrategy {
 
     /**
      * 根据文件信息选择存储服务
-     * @param fileName 文件名
-     * @param fileSize 文件大小
-     * @param metadata 元数据
      * @return 选择的存储服务
      */
-    StorageService selectStorageService(String fileName, long fileSize, Map<String, Object> metadata);
+    StorageService selectStorageService();
 
     /**
      * 根据文件夹信息选择存储服务
-     * @param folderName 文件夹名
-     * @param totalFiles 总文件数
-     * @param totalSize 总大小
-     * @param structureJson 目录结构JSON
      * @return 选择的存储服务
      */
-    StorageService selectStorageServiceForFolder(String folderName, int totalFiles, long totalSize, String structureJson);
+    StorageService selectStorageServiceForFolder();
 
     /**
      * 获取所有可用的存储服务

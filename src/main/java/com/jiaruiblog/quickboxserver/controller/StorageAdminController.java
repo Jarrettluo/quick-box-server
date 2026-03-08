@@ -1,6 +1,9 @@
 package com.jiaruiblog.quickboxserver.controller;
 
 import com.jiaruiblog.quickboxserver.common.ApiResult;
+import com.jiaruiblog.quickboxserver.model.admin.StorageBackendInfo;
+import com.jiaruiblog.quickboxserver.model.admin.StrategyRequest;
+import com.jiaruiblog.quickboxserver.model.admin.WeightRequest;
 import com.jiaruiblog.quickboxserver.storage.StorageService;
 import com.jiaruiblog.quickboxserver.storage.StorageServiceFactory;
 import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
@@ -11,30 +14,27 @@ import com.jiaruiblog.quickboxserver.storage.strategy.ConfigurableStorageStrateg
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.Data;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * 存储管理控制器
  * 提供存储后端的管理和监控API
  */
+@AllArgsConstructor
 @Slf4j
 @RestController
 @RequestMapping("/api/storage")
 @Tag(name = "存储管理", description = "存储后端管理和监控API")
 public class StorageAdminController {
 
-    @Autowired
     private StorageServiceFactory storageServiceFactory;
 
-    @Autowired
     private ConfigurableStorageStrategy storageStrategy;
 
     @Operation(summary = "获取存储后端列表", description = "获取所有配置的存储后端信息")
@@ -46,7 +46,7 @@ public class StorageAdminController {
             Map<String, StorageService> allServices = storageServiceFactory.getAllStorageServices();
             List<StorageBackendInfo> backends = allServices.values().stream()
                 .map(this::convertToBackendInfo)
-                .collect(Collectors.toList());
+                .toList();
 
             return ApiResult.success(backends);
         } catch (Exception e) {
@@ -361,46 +361,5 @@ public class StorageAdminController {
         }
 
         return info;
-    }
-
-    // ==================== 请求和响应类 ====================
-
-    @Data
-    public static class StorageBackendInfo {
-        private String name;
-        private com.jiaruiblog.quickboxserver.storage.model.StorageType type;
-        private StorageConfig config;
-        private boolean available;
-        private String healthStatus;
-        private String errorMessage;
-    }
-
-    @Data
-    public static class StrategyRequest {
-        private String strategyType;
-        private String primaryStorageService;
-        private List<String> backupStorageServices;
-        private String loadBalanceAlgorithm;
-        private Map<String, Object> additionalConfig;
-    }
-
-    @Data
-    public static class WeightRequest {
-        private String storageServiceName;
-        private long weight;
-    }
-
-    // ==================== 异常处理 ====================
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ApiResult<Void> handleIllegalArgumentException(IllegalArgumentException e) {
-        log.error("参数错误", e);
-        return ApiResult.error(400, e.getMessage());
-    }
-
-    @ExceptionHandler(Exception.class)
-    public ApiResult<Void> handleException(Exception e) {
-        log.error("服务器错误", e);
-        return ApiResult.error(500, "服务器内部错误: " + e.getMessage());
     }
 }
