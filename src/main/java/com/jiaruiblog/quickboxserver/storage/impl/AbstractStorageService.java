@@ -298,11 +298,6 @@ public abstract class AbstractStorageService implements StorageService {
     }
 
     @Override
-    public InputStream downloadFolderFile(String folderPath, String relativePath) {
-        throw new UnsupportedOperationException("文件夹文件下载不支持");
-    }
-
-    @Override
     public void deleteFolder(String folderPath) {
         throw new UnsupportedOperationException("文件夹删除不支持");
     }

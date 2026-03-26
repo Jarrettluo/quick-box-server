@@ -133,14 +133,6 @@ public interface StorageService {
     InputStream downloadFolderAsZip(String folderPath);
 
     /**
-     * 下载文件夹中的单个文件
-     * @param folderPath 文件夹路径
-     * @param relativePath 相对路径
-     * @return 文件数据流
-     */
-    InputStream downloadFolderFile(String folderPath, String relativePath);
-
-    /**
      * 删除文件夹
      * @param folderPath 文件夹路径
      */

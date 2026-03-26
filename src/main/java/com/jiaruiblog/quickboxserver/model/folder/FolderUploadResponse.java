@@ -85,11 +85,6 @@ public class FolderUploadResponse {
     private String storageBackend;
 
     /**
-     * 是否ZIP压缩包
-     */
-    private Boolean isZipUpload = false;
-
-    /**
      * 文件夹路径
      */
     private String folderPath;

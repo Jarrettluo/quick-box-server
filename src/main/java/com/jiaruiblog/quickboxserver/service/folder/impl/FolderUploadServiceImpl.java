@@ -18,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -466,36 +468,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
     }
 
     @Override
-    public InputStream downloadFolderFile(String accessCode, String relativePath) {
-        log.debug("下载文件夹文件: {} -> {}", accessCode, relativePath);
-
-        try {
-            // 获取文件夹信息
-            FolderInfo folderInfo = getFolderInfoFromRedis(accessCode);
-            if (folderInfo == null) {
-                throw new BusinessException(ErrorCode.FOLDER_NOT_FOUND);
-            }
-
-            // 检查是否过期
-            if (folderInfo.getExpireTime() != null && folderInfo.getExpireTime().isBefore(LocalDateTime.now())) {
-                throw new BusinessException(ErrorCode.FOLDER_EXPIRED);
-            }
-
-            // 获取存储服务
-            StorageService storageService = storageServiceFactory.getStorageService(folderInfo.getStorageBackend());
-
-            // 下载文件
-            return storageService.downloadFolderFile(folderInfo.getFolderPath(), relativePath);
-        } catch (BusinessException e) {
-            log.error("下载文件夹文件业务异常", e);
-            throw e;
-        } catch (Exception e) {
-            log.error("下载文件夹文件失败", e);
-            throw new BusinessException(ErrorCode.FILE_DOWNLOAD_FAILED, e.getMessage());
-        }
-    }
-
-    @Override
     public String generateAccessCode() {
         // 生成6位大写字母随机码
         String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -617,7 +589,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         folderInfo.setStructureJson(session.getStructureJson());
         folderInfo.setAutoZip(session.getAutoZip());
         folderInfo.setKeepStructure(session.getKeepStructure());
-        folderInfo.setZipUpload(session.isZipUpload());
         folderInfo.setStorageBackend(session.getStorageBackend());
         folderInfo.setCreateTime(session.getCreateTime());
         folderInfo.setExpireTime(session.getExpireTime());
@@ -639,7 +610,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         response.setTotalSize(session.getTotalSize());
         response.setUploadedSize(session.getUploadedSize());
         response.setStorageBackend(session.getStorageBackend());
-        response.setIsZipUpload(session.isZipUpload());
         response.setFolderPath(session.getFolderPath());
         response.setMetadata(session.getMetadata());
 
@@ -667,7 +637,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         response.setLastDownloadTime(folderInfo.getLastDownloadTime());
         response.setStorageBackend(folderInfo.getStorageBackend());
         response.setFolderPath(folderInfo.getFolderPath());
-        response.setIsZipUpload(folderInfo.isZipUpload());
         response.setKeepStructure(folderInfo.getKeepStructure());
         response.setStructureJson(folderInfo.getStructureJson());
         response.setMetadata(folderInfo.getMetadata());
@@ -683,15 +652,8 @@ public class FolderUploadServiceImpl implements FolderUploadService {
     }
 
     private int calculateUploadedFiles(FolderUploadSession session) {
-        // 简单估算：假设每个分片对应一个文件
-        // 实际实现中应该根据具体上传情况计算
-        if (session.isZipUpload()) {
-            // ZIP上传：分片数不一定等于文件数
-            return (int) (session.getUploadedChunks() * 1.0 / session.getTotalFiles() * session.getTotalFiles());
-        } else {
-            // 普通文件夹上传：每个文件可能有多个分片
-            return Math.min(session.getUploadedChunks(), session.getTotalFiles());
-        }
+        // 普通文件夹上传：每个文件可能有多个分片
+        return Math.min(session.getUploadedChunks(), session.getTotalFiles());
     }
 
     // ==================== 事件触发方法 ====================
@@ -760,7 +722,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         private String structureJson;
         private Boolean autoZip = true;
         private Boolean keepStructure = true;
-        private boolean zipUpload = false;
         private String storageBackend;
         private LocalDateTime createTime;
         private LocalDateTime expireTime;
@@ -783,7 +744,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         private String structureJson;
         private Boolean autoZip = true;
         private Boolean keepStructure = true;
-        private boolean zipUpload = false;
         private String storageBackend;
         private LocalDateTime createTime;
         private LocalDateTime expireTime;
@@ -860,8 +820,24 @@ public class FolderUploadServiceImpl implements FolderUploadService {
 
     @Override
     public boolean validateFilePath(String relativePath) {
-        // TODO: 实现验证文件路径
-        return StringUtils.hasText(relativePath) && !relativePath.contains("..");
+        if (!StringUtils.hasText(relativePath)) {
+            return false;
+        }
+        // 检查URL编码的 .. (防止 %2e%2e 绕过)
+        try {
+            String decoded = URLDecoder.decode(relativePath, StandardCharsets.UTF_8.name());
+            // 检查各种路径遍历模式
+            if (decoded.contains("..") || decoded.contains("\\")) {
+                return false;
+            }
+            // 检查混合路径分隔符
+            if (decoded.contains("/../") || decoded.startsWith("../") || decoded.endsWith("/..")) {
+                return false;
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        return true;
     }
 
     @Override

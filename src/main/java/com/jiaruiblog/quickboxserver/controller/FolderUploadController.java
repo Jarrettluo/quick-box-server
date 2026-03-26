@@ -79,9 +79,6 @@ public class FolderUploadController {
             @Parameter(description = "文件标识符") @RequestParam("identifier") String identifier,
             @Parameter(description = "文件名") @RequestParam("filename") String filename,
             @Parameter(description = "相对路径") @RequestParam(value = "relativePath", required = false) String relativePath,
-            @Parameter(description = "是否ZIP压缩包") @RequestParam(value = "isZipUpload", defaultValue = "false") Boolean isZipUpload,
-            @Parameter(description = "ZIP文件索引") @RequestParam(value = "zipFileIndex", required = false) Integer zipFileIndex,
-            @Parameter(description = "ZIP总分片数") @RequestParam(value = "zipTotalChunks", required = false) Integer zipTotalChunks,
             @Parameter(description = "元数据") @RequestParam(value = "metadata", required = false) String metadata,
             @Parameter(description = "分片文件") @RequestParam("file") MultipartFile file) {
 
@@ -99,9 +96,6 @@ public class FolderUploadController {
             request.setIdentifier(identifier);
             request.setFilename(filename);
             request.setRelativePath(relativePath);
-            request.setIsZipUpload(isZipUpload);
-            request.setZipFileIndex(zipFileIndex);
-            request.setZipTotalChunks(zipTotalChunks);
             request.setMetadata(metadata);
             request.setFile(file);
 
@@ -252,40 +246,6 @@ public class FolderUploadController {
                     .body(new InputStreamResource(zipStream));
         } catch (Exception e) {
             log.error("下载文件夹失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
-    }
-
-    @Operation(summary = "下载文件夹文件", description = "下载文件夹中的单个文件")
-    @GetMapping("/file/{accessCode}")
-    public ResponseEntity<InputStreamResource> downloadFolderFile(
-            @Parameter(description = "取件码") @PathVariable String accessCode,
-            @Parameter(description = "文件相对路径") @RequestParam("path") String relativePath) {
-        log.debug("下载文件夹文件: {} -> {}", accessCode, relativePath);
-
-        try {
-            // 验证取件码
-            if (!folderUploadService.validateAccessCode(accessCode)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-
-            // 下载文件
-            InputStream fileStream = folderUploadService.downloadFolderFile(accessCode, relativePath);
-
-            // 获取文件名
-            String filename = relativePath.substring(relativePath.lastIndexOf('/') + 1);
-
-            // 设置响应头
-            HttpHeaders headers = new HttpHeaders();
-            headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" +
-                    URLEncoder.encode(filename, StandardCharsets.UTF_8) + "\"");
-            headers.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE);
-
-            return ResponseEntity.ok()
-                    .headers(headers)
-                    .body(new InputStreamResource(fileStream));
-        } catch (Exception e) {
-            log.error("下载文件夹文件失败", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

@@ -49,24 +49,9 @@ public class FolderChunkUploadRequest {
     private String filename;
 
     /**
-     * 相对路径（仅普通文件夹上传时有效）
+     * 相对路径
      */
     private String relativePath;
-
-    /**
-     * 是否ZIP压缩包
-     */
-    private Boolean isZipUpload = false;
-
-    /**
-     * ZIP文件中的文件索引（仅ZIP上传时有效）
-     */
-    private Integer zipFileIndex;
-
-    /**
-     * ZIP文件中的总分片数（仅ZIP上传时有效）
-     */
-    private Integer zipTotalChunks;
 
     /**
      * 分片文件
@@ -126,19 +111,8 @@ public class FolderChunkUploadRequest {
             throw new IllegalArgumentException("分片文件大小不匹配");
         }
 
-        if (!isZipUpload && (relativePath == null || relativePath.trim().isEmpty())) {
+        if (relativePath == null || relativePath.trim().isEmpty()) {
             throw new IllegalArgumentException("相对路径不能为空");
-        }
-
-        if (isZipUpload) {
-            // ZIP上传时，zipFileIndex和zipTotalChunks参数是可选的，只有在分块上传ZIP文件时才需要
-            // 对于单个文件的ZIP上传，这些参数可能不存在
-            if (zipFileIndex != null && zipFileIndex < 0) {
-                throw new IllegalArgumentException("ZIP文件索引无效");
-            }
-            if (zipTotalChunks != null && zipTotalChunks <= 0) {
-                throw new IllegalArgumentException("ZIP总分片数必须大于0");
-            }
         }
     }
 

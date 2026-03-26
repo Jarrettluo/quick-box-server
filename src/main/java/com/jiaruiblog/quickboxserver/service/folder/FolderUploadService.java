@@ -78,14 +78,6 @@ public interface FolderUploadService {
     InputStream downloadFolderAsZip(String accessCode);
 
     /**
-     * 下载文件夹中的单个文件
-     * @param accessCode 取件码
-     * @param relativePath 相对路径
-     * @return 文件流
-     */
-    InputStream downloadFolderFile(String accessCode, String relativePath);
-
-    /**
      * 获取文件夹下载URL
      * @param accessCode 取件码
      * @return 下载URL

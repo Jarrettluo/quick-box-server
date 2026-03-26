@@ -86,11 +86,6 @@ public class FolderInfoResponse {
     private String folderPath;
 
     /**
-     * 是否ZIP压缩包
-     */
-    private Boolean isZipUpload = false;
-
-    /**
      * 是否保持目录结构
      */
     private Boolean keepStructure = true;

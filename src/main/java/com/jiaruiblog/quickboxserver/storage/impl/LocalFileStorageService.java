@@ -471,6 +471,12 @@ public class LocalFileStorageService extends AbstractStorageService {
                         .collect(Collectors.toList());
                 }
 
+                // 验证分片完整性
+                Integer totalChunks = (Integer) metadata.get("totalChunks");
+                if (totalChunks != null && chunkFiles.size() != totalChunks) {
+                    throw new RuntimeException("分片数量不匹配: 期望 " + totalChunks + ", 实际 " + chunkFiles.size());
+                }
+
                 // 合并分片
                 for (Path chunkFile : chunkFiles) {
                     try (InputStream inputStream = Files.newInputStream(chunkFile)) {

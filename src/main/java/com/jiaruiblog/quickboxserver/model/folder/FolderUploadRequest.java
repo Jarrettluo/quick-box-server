@@ -45,16 +45,6 @@ public class FolderUploadRequest {
     private List<FileItem> files;
 
     /**
-     * 是否ZIP压缩包上传
-     */
-    private Boolean isZipUpload = false;
-
-    /**
-     * ZIP文件大小（仅ZIP上传时有效）
-     */
-    private Long zipFileSize;
-
-    /**
      * 元数据
      */
     private String metadata;
@@ -97,7 +87,7 @@ public class FolderUploadRequest {
         /**
          * 分片大小（字节）
          */
-        private Long chunkSize = 5 * 1024 * 1024L; // 5MB
+        private Long chunkSize = 16 * 1024 * 1024L; // 16MB
 
         /**
          * 总分片数
@@ -121,26 +111,20 @@ public class FolderUploadRequest {
             throw new IllegalArgumentException("总大小必须大于0");
         }
 
-        if (isZipUpload != null && isZipUpload) {
-            if (zipFileSize == null || zipFileSize <= 0) {
-                throw new IllegalArgumentException("ZIP文件大小必须大于0");
-            }
-        } else {
-            if (files == null || files.isEmpty()) {
-                throw new IllegalArgumentException("文件列表不能为空");
-            }
+        if (files == null || files.isEmpty()) {
+            throw new IllegalArgumentException("文件列表不能为空");
+        }
 
-            // 验证文件项
-            for (FileItem file : files) {
-                if (file.getFileName() == null || file.getFileName().trim().isEmpty()) {
-                    throw new IllegalArgumentException("文件名不能为空");
-                }
-                if (file.getFileSize() == null || file.getFileSize() <= 0) {
-                    throw new IllegalArgumentException("文件大小必须大于0");
-                }
-                if (file.getRelativePath() == null) {
-                    throw new IllegalArgumentException("相对路径不能为空");
-                }
+        // 验证文件项
+        for (FileItem file : files) {
+            if (file.getFileName() == null || file.getFileName().trim().isEmpty()) {
+                throw new IllegalArgumentException("文件名不能为空");
+            }
+            if (file.getFileSize() == null || file.getFileSize() <= 0) {
+                throw new IllegalArgumentException("文件大小必须大于0");
+            }
+            if (file.getRelativePath() == null) {
+                throw new IllegalArgumentException("相对路径不能为空");
             }
         }
 
