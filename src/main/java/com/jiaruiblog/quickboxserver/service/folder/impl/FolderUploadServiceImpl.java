@@ -106,7 +106,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             session.setStructureJson(request.getStructureJson());
             session.setAutoZip(request.getAutoZip());
             session.setKeepStructure(request.getKeepStructure());
-            session.setZipUpload(request.getIsZipUpload());
             session.setStorageBackend(storageService.getStorageName());
             session.setCreateTime(LocalDateTime.now());
             session.setExpireTime(LocalDateTime.now().plusSeconds(request.getExpireSeconds()));
