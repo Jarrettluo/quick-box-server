@@ -9,6 +9,7 @@ import com.jiaruiblog.quickboxserver.model.request.ChunkUploadRequest;
 import com.jiaruiblog.quickboxserver.model.response.UploadProgress;
 import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import com.jiaruiblog.quickboxserver.service.FileUploadService;
+import com.jiaruiblog.quickboxserver.service.folder.FolderUploadService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -41,12 +42,18 @@ import java.util.stream.Collectors;
 public class FileUploadServiceImpl implements FileUploadService {
 
     private static final String REDIS_KEY_PREFIX = "upload:access:";
+    private static final String REDIS_FOLDER_KEY_PREFIX = "folder:";
 
     @Resource
     private RedisTemplate<String, String> redisTemplate;
+    @Resource
+    private ObjectMapper objectMapper;
 
     @Resource
     private FileStorageConfig fileStorageConfig;
+
+    @Resource
+    private FolderUploadService folderUploadService;
 
     @Override
     public UploadSession initUploadSession(ChunkUploadRequest chunkUploadRequest) {
@@ -289,6 +296,26 @@ public class FileUploadServiceImpl implements FileUploadService {
 
     @Override
     public File getFileByAccessCode(String accessCode) {
+        // Check if it's a folder access code first
+        String folderKey = REDIS_FOLDER_KEY_PREFIX + accessCode;
+        String folderJson = (String) redisTemplate.opsForValue().get(folderKey);
+        if (folderJson != null) {
+            // It's a folder upload - get the actual folder path from folder info
+            try {
+                Map<?, ?> folderInfo = objectMapper.readValue(folderJson, Map.class);
+                String folderPath = (String) folderInfo.get("folderPath");
+                if (folderPath != null) {
+                    File folder = new File(folderPath);
+                    if (folder.exists() && folder.isDirectory()) {
+                        return folder;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("解析文件夹信息失败: {}", accessCode, e);
+            }
+            throw new IllegalArgumentException("Folder not found or not ready");
+        }
+
         // Check if access code exists in Redis
         if (Boolean.FALSE.equals(redisTemplate.hasKey(REDIS_KEY_PREFIX + accessCode))) {
             throw new IllegalArgumentException("Invalid or expired access code");
@@ -310,12 +337,53 @@ public class FileUploadServiceImpl implements FileUploadService {
     @Override
     public FileInfo getFileInfo(String accessCode) {
         File file = getFileByAccessCode(accessCode);
-        return new FileInfo(
-                file.getName(),
-                file.length(),
-                file.lastModified(),
-                "/download/" + accessCode + "/" + file.getName()
-        );
+        String downloadUrl;
+        if (file.isDirectory()) {
+            // Folder case - get detailed folder info from FolderUploadService
+            downloadUrl = "/api/upload/folder/download/" + accessCode;
+            com.jiaruiblog.quickboxserver.model.folder.FolderInfoResponse folderInfo =
+                    folderUploadService.getFolderInfo(accessCode);
+
+            FileInfo result = new FileInfo();
+            result.setType("folder");
+            result.setFilename(folderInfo.getFolderName());
+            result.setDownloadUrl(downloadUrl);
+            result.setFolderName(folderInfo.getFolderName());
+            result.setTotalFiles(folderInfo.getTotalFiles());
+            result.setTotalSize(folderInfo.getTotalSize());
+            result.setCreateTime(folderInfo.getCreateTime());
+            result.setExpireTime(folderInfo.getExpireTime());
+            result.setRemainingExpireSeconds(folderInfo.getRemainingExpireSeconds());
+            result.setExpired(folderInfo.getExpired());
+            result.setDownloaded(folderInfo.getDownloaded());
+
+            // Map file list
+            if (folderInfo.getFiles() != null) {
+                List<FileInfo.FileDetail> fileDetails = folderInfo.getFiles().stream()
+                        .map(fi -> {
+                            FileInfo.FileDetail detail = new FileInfo.FileDetail();
+                            detail.setFileName(fi.getFileName());
+                            detail.setFileSize(fi.getFileSize());
+                            detail.setRelativePath(fi.getRelativePath());
+                            detail.setDownloadUrl(fi.getDownloadUrl());
+                            return detail;
+                        })
+                        .collect(Collectors.toList());
+                result.setFiles(fileDetails);
+            }
+
+            return result;
+        } else {
+            // Regular file case
+            downloadUrl = "/download/" + accessCode + "/" + file.getName();
+            FileInfo result = new FileInfo();
+            result.setType("file");
+            result.setFilename(file.getName());
+            result.setSize(file.length());
+            result.setLastModified(file.lastModified());
+            result.setDownloadUrl(downloadUrl);
+            return result;
+        }
     }
 
     public static String generateRandomCode(int length) {
