@@ -100,6 +100,7 @@ public enum ErrorCode {
     FOLDER_ALREADY_DOWNLOADED(11008, "error-code.folder-already-downloaded"),
     FOLDER_EXPIRED(11009, "error-code.folder-expired"),
     FOLDER_DELETE_FAILED(11010, "error-code.folder-delete-failed"),
+    FOLDER_CLEANUP_FAILED(11014, "error-code.folder-cleanup-failed"),
     INVALID_FOLDER_NAME(11011, "error-code.invalid-folder-name"),
     FOLDER_SIZE_EXCEEDED(11012, "error-code.folder-size-exceeded"),
     FOLDER_FILE_COUNT_EXCEEDED(11013, "error-code.folder-file-count-exceeded"),

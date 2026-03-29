@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -280,11 +279,6 @@ public abstract class AbstractStorageService implements StorageService {
     @Override
     public String initFolderUpload(String folderId, String folderName, int totalFiles, long totalSize, String structureJson) {
         throw new UnsupportedOperationException("文件夹上传不支持");
-    }
-
-    @Override
-    public void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize) {
-        throw new UnsupportedOperationException("文件夹分片上传不支持");
     }
 
     @Override

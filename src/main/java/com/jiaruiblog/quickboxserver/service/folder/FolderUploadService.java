@@ -61,13 +61,6 @@ public interface FolderUploadService {
      */
     boolean validateAccessCode(String accessCode);
 
-    /**
-     * 更新文件夹元数据
-     * @param accessCode 取件码
-     * @param metadata 元数据
-     */
-    void updateFolderMetadata(String accessCode, String metadata);
-
     // ==================== 文件夹下载管理 ====================
 
     /**
@@ -76,21 +69,6 @@ public interface FolderUploadService {
      * @return ZIP文件流
      */
     InputStream downloadFolderAsZip(String accessCode);
-
-    /**
-     * 获取文件夹下载URL
-     * @param accessCode 取件码
-     * @return 下载URL
-     */
-    String getFolderDownloadUrl(String accessCode);
-
-    /**
-     * 获取文件下载URL
-     * @param accessCode 取件码
-     * @param relativePath 相对路径
-     * @return 下载URL
-     */
-    String getFileDownloadUrl(String accessCode, String relativePath);
 
     // ==================== 文件夹清理管理 ====================
 
@@ -111,26 +89,6 @@ public interface FolderUploadService {
      */
     void batchDeleteFolders(java.util.List<String> accessCodes);
 
-    // ==================== 统计和监控 ====================
-
-    /**
-     * 获取文件夹统计信息
-     * @return 统计信息
-     */
-    FolderStats getFolderStats();
-
-    /**
-     * 获取上传会话统计
-     * @return 会话统计
-     */
-    UploadSessionStats getUploadSessionStats();
-
-    /**
-     * 获取存储使用情况
-     * @return 存储使用情况
-     */
-    StorageUsageStats getStorageUsageStats();
-
     // ==================== 工具方法 ====================
 
     /**
@@ -140,93 +98,9 @@ public interface FolderUploadService {
     String generateAccessCode();
 
     /**
-     * 验证文件夹名称
-     * @param folderName 文件夹名称
-     * @return 是否有效
-     */
-    boolean validateFolderName(String folderName);
-
-    /**
      * 验证文件路径
      * @param relativePath 相对路径
      * @return 是否有效
      */
     boolean validateFilePath(String relativePath);
-
-    /**
-     * 计算文件夹哈希值
-     * @param accessCode 取件码
-     * @return 哈希值
-     */
-    String calculateFolderHash(String accessCode);
-
-    // ==================== 事件监听 ====================
-
-    /**
-     * 添加文件夹事件监听器
-     * @param listener 监听器
-     */
-    void addFolderEventListener(FolderEventListener listener);
-
-    /**
-     * 移除文件夹事件监听器
-     * @param listener 监听器
-     */
-    void removeFolderEventListener(FolderEventListener listener);
-
-    // ==================== 内部类和接口 ====================
-
-    /**
-     * 文件夹统计信息
-     */
-    interface FolderStats {
-        long getTotalFolders();
-        long getTotalFiles();
-        long getTotalSize();
-        long getActiveUploads();
-        long getCompletedUploads();
-        long getFailedUploads();
-        double getSuccessRate();
-    }
-
-    /**
-     * 上传会话统计
-     */
-    interface UploadSessionStats {
-        long getTotalSessions();
-        long getActiveSessions();
-        long getCompletedSessions();
-        long getFailedSessions();
-        long getCancelledSessions();
-        double getAverageUploadTime();
-        double getAverageFileSize();
-    }
-
-    /**
-     * 存储使用情况统计
-     */
-    interface StorageUsageStats {
-        long getTotalSpace();
-        long getUsedSpace();
-        long getAvailableSpace();
-        double getUsedPercentage();
-        long getFolderCount();
-        long getFileCount();
-    }
-
-    /**
-     * 文件夹事件监听器
-     */
-    interface FolderEventListener {
-        default void onFolderUploadStarted(FolderUploadResponse response) {}
-        default void onFolderChunkUploaded(FolderUploadResponse response, int chunkNumber) {}
-        default void onFolderUploadCompleted(FolderUploadResponse response) {}
-        default void onFolderUploadFailed(FolderUploadResponse response, String error) {}
-        default void onFolderUploadCancelled(FolderUploadResponse response) {}
-        default void onFolderDownloadStarted(FolderInfoResponse response) {}
-        default void onFolderDownloadCompleted(FolderInfoResponse response) {}
-        default void onFolderDownloadFailed(FolderInfoResponse response, String error) {}
-        default void onFolderDeleted(FolderInfoResponse response) {}
-        default void onFolderExpired(FolderInfoResponse response) {}
-    }
 }

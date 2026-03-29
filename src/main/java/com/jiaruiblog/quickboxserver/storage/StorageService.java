@@ -110,13 +110,16 @@ public interface StorageService {
     String initFolderUpload(String folderId, String folderName, int totalFiles, long totalSize, String structureJson);
 
     /**
-     * 上传文件夹分片（ZIP格式）
+     * 上传文件夹分片（保持目录结构）
      * @param sessionId 上传会话ID
      * @param chunkNumber 分片序号
      * @param chunkData 分片数据流
      * @param chunkSize 分片大小
+     * @param relativePath 相对路径（如 "a/b/b"）
+     * @param filename 文件名（如 "c.txt"）
      */
-    void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize);
+    void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize,
+                          String relativePath, String filename);
 
     /**
      * 合并文件夹分片并解压

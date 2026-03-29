@@ -36,6 +36,10 @@ public class FolderUploadController {
 
     private FolderUploadService folderUploadService;
 
+    // STEP1: 初始化文件夹的metadata.json信息；存下来每一个要传递文件的id和code；存储整个文件夹的结构， 后面的每个文件就关联上了。
+
+
+    // STEP2: 传递每一个单独的文件，先初始化，正常传递
     @Operation(summary = "初始化文件夹上传", description = "创建文件夹上传会话")
     @PostMapping("/init")
     public ApiResult<FolderUploadResponse> initFolderUpload(
@@ -67,22 +71,19 @@ public class FolderUploadController {
         }
     }
 
+    // STEP3: 每个单独的文件进行分片上传，分片的大小由前端决定
     @Operation(summary = "上传文件夹分片", description = "上传文件夹分片文件")
     @PostMapping(value = "/chunk", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResult<FolderUploadResponse> uploadFolderChunk(
             @Parameter(description = "上传会话ID") @RequestParam("sessionId") String sessionId,
             @Parameter(description = "分片序号") @RequestParam("chunkNumber") Integer chunkNumber,
             @Parameter(description = "总分片数") @RequestParam("totalChunks") Integer totalChunks,
-            @Parameter(description = "分片大小") @RequestParam("chunkSize") Long chunkSize,
             @Parameter(description = "当前分片大小") @RequestParam("currentChunkSize") Long currentChunkSize,
-            @Parameter(description = "总大小") @RequestParam("totalSize") Long totalSize,
-            @Parameter(description = "文件标识符") @RequestParam("identifier") String identifier,
             @Parameter(description = "文件名") @RequestParam("filename") String filename,
             @Parameter(description = "相对路径") @RequestParam(value = "relativePath", required = false) String relativePath,
-            @Parameter(description = "元数据") @RequestParam(value = "metadata", required = false) String metadata,
             @Parameter(description = "分片文件") @RequestParam("file") MultipartFile file) {
 
-        log.debug("收到文件夹分片上传请求: {} - {} ({} bytes)", sessionId, chunkNumber, currentChunkSize);
+        log.info("收到文件夹分片上传请求: {} - {} ({} bytes)", sessionId, chunkNumber, currentChunkSize);
 
         try {
             // 创建请求对象
@@ -90,13 +91,9 @@ public class FolderUploadController {
             request.setSessionId(sessionId);
             request.setChunkNumber(chunkNumber);
             request.setTotalChunks(totalChunks);
-            request.setChunkSize(chunkSize);
             request.setCurrentChunkSize(currentChunkSize);
-            request.setTotalSize(totalSize);
-            request.setIdentifier(identifier);
             request.setFilename(filename);
             request.setRelativePath(relativePath);
-            request.setMetadata(metadata);
             request.setFile(file);
 
             // 验证请求
@@ -105,7 +102,7 @@ public class FolderUploadController {
             // 上传分片
             FolderUploadResponse response = folderUploadService.uploadFolderChunk(request);
 
-            log.debug("文件夹分片上传成功: {} - {} ({} bytes)", sessionId, chunkNumber, currentChunkSize);
+            log.debug("文件夹分片上传成功: {} - 分片序号：{} ({} bytes)", sessionId, chunkNumber, currentChunkSize);
             return ApiResult.success(response);
         } catch (IllegalArgumentException e) {
             log.error("文件夹分片上传参数错误", e);
@@ -116,6 +113,7 @@ public class FolderUploadController {
         }
     }
 
+    // STEP4: 合并每一个独立的文件
     @Operation(summary = "合并文件夹分片", description = "合并所有分片并完成上传")
     @PostMapping("/merge")
     public ApiResult<FolderUploadResponse> mergeFolderChunks(
@@ -195,6 +193,7 @@ public class FolderUploadController {
         }
     }
 
+    // STEP5: 根据第一步取到的信息获取文件夹的详情
     @Operation(summary = "验证取件码", description = "验证取件码是否有效")
     @GetMapping("/validate/{accessCode}")
     public ApiResult<Boolean> validateAccessCode(
@@ -210,6 +209,7 @@ public class FolderUploadController {
         }
     }
 
+    // STEP6: 将文件夹进行合并成zip后下载
     @Operation(summary = "下载文件夹", description = "下载文件夹为ZIP压缩包")
     @GetMapping("/download/{accessCode}")
     public ResponseEntity<InputStreamResource> downloadFolder(

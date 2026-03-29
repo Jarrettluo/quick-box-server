@@ -15,7 +15,6 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
 import java.net.URLDecoder;
@@ -26,7 +25,6 @@ import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -51,16 +49,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
     private final Map<String, FolderUploadSession> uploadSessions = new ConcurrentHashMap<>();
 
     private final Map<String, FolderInfo> folderInfos = new ConcurrentHashMap<>();
-
-    private final List<FolderEventListener> listeners = new CopyOnWriteArrayList<>();
-
-    private final AtomicLong totalFolders = new AtomicLong(0);
-
-    private final AtomicLong totalFiles = new AtomicLong(0);
-
-    private final AtomicLong totalSize = new AtomicLong(0);
-
-    private final AtomicLong activeUploads = new AtomicLong(0);
 
     private final AtomicLong completedUploads = new AtomicLong(0);
 
@@ -90,30 +78,24 @@ public class FolderUploadServiceImpl implements FolderUploadService {
                 request.getFolderName(),
                 request.getTotalFiles(),
                 request.getTotalSize(),
-                request.getStructureJson()
+                null
             );
 
             // 创建上传会话
             FolderUploadSession session = new FolderUploadSession();
-            // 存入会话的id，以便下次上传的时候可以取到
             session.setSessionId(sessionId);
-
             session.setFolderId(folderId);
             session.setFolderName(request.getFolderName());
+
             session.setAccessCode(accessCode);
+
             session.setTotalFiles(request.getTotalFiles());
             session.setTotalSize(request.getTotalSize());
-            session.setStructureJson(request.getStructureJson());
-            session.setAutoZip(request.getAutoZip());
-            session.setKeepStructure(request.getKeepStructure());
+
             session.setStorageBackend(storageService.getStorageName());
             session.setCreateTime(LocalDateTime.now());
             session.setExpireTime(LocalDateTime.now().plusSeconds(request.getExpireSeconds()));
             session.setStatus(FolderUploadResponse.UploadStatus.INITIALIZED);
-
-            if (request.getMetadata() != null) {
-                session.setMetadata(request.getMetadata());
-            }
 
             // 保存到Redis
             saveSessionToRedis(session);
@@ -122,15 +104,9 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             // 保存到内存
             uploadSessions.put(sessionId, session);
 
-            // 更新统计
-            activeUploads.incrementAndGet();
-
             // 创建响应
             FolderUploadResponse response = createResponseFromSession(session);
             log.info("文件夹上传初始化成功: {} -> {}", sessionId, accessCode);
-
-            // 触发事件
-            fireFolderUploadStarted(response);
 
             return response;
         } catch (Exception e) {
@@ -142,7 +118,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
     @Override
     public FolderUploadResponse uploadFolderChunk(FolderChunkUploadRequest request) {
         log.info("上传文件夹分片: {} - {}", request.getSessionId(), request.getChunkNumber());
-
+        log.info("当前分片上传的request内容是：{}", request);
         try {
             // 获取上传会话
             FolderUploadSession session = getSession(request.getSessionId());
@@ -156,6 +132,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
                 session.getStatus() != FolderUploadResponse.UploadStatus.MERGING) {
                 throw new BusinessException(ErrorCode.SESSION_INVALID_STATE);
             }
+            log.info("获取的 session 信息是：{}", session);
 
             // 获取存储服务
             StorageService storageService = storageServiceFactory.getStorageService(session.getStorageBackend());
@@ -165,12 +142,13 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             session.setLastUpdateTime(LocalDateTime.now());
 
             // 上传分片
-            // TODO，前端是一个文件一个文件的分片过来的；导致后端在生成chunk的时候必须按照单个文件的identify进行区分
             storageService.uploadFolderChunk(
                 session.getSessionId(),
                 request.getChunkNumber(),
                 request.getFile().getInputStream(),
-                request.getCurrentChunkSize()
+                request.getCurrentChunkSize(),
+                request.getRelativePath(),
+                request.getFilename()
             );
 
             // 更新会话进度
@@ -187,13 +165,9 @@ public class FolderUploadServiceImpl implements FolderUploadService {
 
             // 创建响应
             FolderUploadResponse response = createResponseFromSession(session);
-            response.setUploadedFiles(calculateUploadedFiles(session));
 
             log.debug("文件夹分片上传成功: {} - {} ({} bytes)",
                 request.getSessionId(), request.getChunkNumber(), request.getCurrentChunkSize());
-
-            // 触发事件
-            fireFolderChunkUploaded(response, request.getChunkNumber());
 
             return response;
         } catch (BusinessException e) {
@@ -249,20 +223,13 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             redisTemplate.delete(REDIS_PREFIX_SESSION + sessionId);
 
             // 更新统计
-            activeUploads.decrementAndGet();
             completedUploads.incrementAndGet();
-            totalFolders.incrementAndGet();
-            totalFiles.addAndGet(session.getTotalFiles());
-            totalSize.addAndGet(session.getTotalSize());
 
             // 创建响应
             FolderUploadResponse response = createResponseFromSession(session);
             response.setFolderPath(folderPath);
 
             log.info("文件夹分片合并成功: {} -> {}", sessionId, folderPath);
-
-            // 触发事件
-            fireFolderUploadCompleted(response);
 
             return response;
         } catch (BusinessException e) {
@@ -297,16 +264,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             redisTemplate.delete(REDIS_PREFIX_FOLDER + session.getAccessCode());
             redisTemplate.delete(REDIS_PREFIX_ACCESS_CODE + session.getAccessCode());
 
-            // 更新统计
-            activeUploads.decrementAndGet();
-
-            // 创建响应
-            FolderUploadResponse response = createResponseFromSession(session);
-
             log.info("文件夹上传取消成功: {}", sessionId);
-
-            // 触发事件
-            fireFolderUploadCancelled(response);
         } catch (Exception e) {
             log.error("取消文件夹上传失败", e);
             throw new BusinessException(ErrorCode.FOLDER_CANCEL_FAILED, e.getMessage());
@@ -321,16 +279,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         }
 
         FolderUploadResponse response = createResponseFromSession(session);
-        response.setUploadedFiles(calculateUploadedFiles(session));
-
-        // 计算上传速度（如果可能）
-        if (session.getLastUpdateTime() != null && session.getCreateTime() != null) {
-            long duration = java.time.Duration.between(session.getCreateTime(), LocalDateTime.now()).getSeconds();
-            if (duration > 0) {
-                response.setUploadSpeed(session.getUploadedSize() / duration);
-            }
-        }
-
         return response;
     }
 
@@ -359,21 +307,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
 
             // 创建响应
             FolderInfoResponse response = createInfoResponseFromFolderInfo(folderInfo);
-
-            // 获取存储服务
-            StorageService storageService = storageServiceFactory.getStorageService(folderInfo.getStorageBackend());
-
-            // 获取文件夹详细信息
-            if (folderInfo.getFolderPath() != null) {
-                com.jiaruiblog.quickboxserver.storage.model.FolderInfo storageFolderInfo =
-                    storageService.getFolderInfo(folderInfo.getFolderPath());
-
-                if (storageFolderInfo != null) {
-                    response.setTotalFiles(storageFolderInfo.getTotalFiles());
-                    response.setTotalFolders(storageFolderInfo.getTotalFolders());
-                    response.setTotalSize(storageFolderInfo.getTotalSize());
-                }
-            }
 
             // 计算剩余过期时间
             if (folderInfo.getExpireTime() != null) {
@@ -451,10 +384,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             folderInfo.setLastDownloadTime(LocalDateTime.now());
             saveFolderInfoToRedis(folderInfo);
 
-            // 触发事件
-            FolderInfoResponse response = createInfoResponseFromFolderInfo(folderInfo);
-            fireFolderDownloadStarted(response);
-
             log.info("文件夹下载开始: {}", accessCode);
             return zipStream;
         } catch (BusinessException e) {
@@ -480,7 +409,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         String accessCode = code.toString();
 
         // 检查是否已存在
-        if (redisTemplate.hasKey(REDIS_PREFIX_ACCESS_CODE + accessCode)) {
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(REDIS_PREFIX_ACCESS_CODE + accessCode))) {
             // 递归生成新的取件码
             return generateAccessCode();
         }
@@ -608,9 +537,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         response.setTotalFiles(session.getTotalFiles());
         response.setTotalSize(session.getTotalSize());
         response.setUploadedSize(session.getUploadedSize());
-        response.setStorageBackend(session.getStorageBackend());
         response.setFolderPath(session.getFolderPath());
-        response.setMetadata(session.getMetadata());
 
         // 计算进度
         if (session.getTotalSize() > 0) {
@@ -632,13 +559,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         response.setCreateTime(folderInfo.getCreateTime());
         response.setExpireTime(folderInfo.getExpireTime());
         response.setDownloaded(folderInfo.getDownloaded());
-        response.setDownloadCount(folderInfo.getDownloadCount());
-        response.setLastDownloadTime(folderInfo.getLastDownloadTime());
-        response.setStorageBackend(folderInfo.getStorageBackend());
-        response.setFolderPath(folderInfo.getFolderPath());
-        response.setKeepStructure(folderInfo.getKeepStructure());
-        response.setStructureJson(folderInfo.getStructureJson());
-        response.setMetadata(folderInfo.getMetadata());
 
         // 计算剩余过期时间
         if (folderInfo.getExpireTime() != null) {
@@ -648,63 +568,6 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         }
 
         return response;
-    }
-
-    private int calculateUploadedFiles(FolderUploadSession session) {
-        // 普通文件夹上传：每个文件可能有多个分片
-        return Math.min(session.getUploadedChunks(), session.getTotalFiles());
-    }
-
-    // ==================== 事件触发方法 ====================
-
-    private void fireFolderUploadStarted(FolderUploadResponse response) {
-        for (FolderEventListener listener : listeners) {
-            try {
-                listener.onFolderUploadStarted(response);
-            } catch (Exception e) {
-                log.error("触发文件夹上传开始事件失败", e);
-            }
-        }
-    }
-
-    private void fireFolderChunkUploaded(FolderUploadResponse response, int chunkNumber) {
-        for (FolderEventListener listener : listeners) {
-            try {
-                listener.onFolderChunkUploaded(response, chunkNumber);
-            } catch (Exception e) {
-                log.error("触发文件夹分片上传事件失败", e);
-            }
-        }
-    }
-
-    private void fireFolderUploadCompleted(FolderUploadResponse response) {
-        for (FolderEventListener listener : listeners) {
-            try {
-                listener.onFolderUploadCompleted(response);
-            } catch (Exception e) {
-                log.error("触发文件夹上传完成事件失败", e);
-            }
-        }
-    }
-
-    private void fireFolderUploadCancelled(FolderUploadResponse response) {
-        for (FolderEventListener listener : listeners) {
-            try {
-                listener.onFolderUploadCancelled(response);
-            } catch (Exception e) {
-                log.error("触发文件夹上传取消事件失败", e);
-            }
-        }
-    }
-
-    private void fireFolderDownloadStarted(FolderInfoResponse response) {
-        for (FolderEventListener listener : listeners) {
-            try {
-                listener.onFolderDownloadStarted(response);
-            } catch (Exception e) {
-                log.error("触发文件夹下载开始事件失败", e);
-            }
-        }
     }
 
     // ==================== 内部类 ====================
@@ -755,81 +618,116 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         private String metadata;
     }
 
-    // ==================== 未实现的方法 ====================
-
-    @Override
-    public void updateFolderMetadata(String accessCode, String metadata) {
-        // TODO: 实现更新文件夹元数据
-        throw new UnsupportedOperationException("未实现");
-    }
-
-    @Override
-    public String getFolderDownloadUrl(String accessCode) {
-        // TODO: 实现获取文件夹下载URL
-        throw new UnsupportedOperationException("未实现");
-    }
-
-    @Override
-    public String getFileDownloadUrl(String accessCode, String relativePath) {
-        // TODO: 实现获取文件下载URL
-        throw new UnsupportedOperationException("未实现");
-    }
+    // ==================== 文件夹删除和清理 ====================
 
     @Override
     public void cleanupExpiredFolders() {
-        // TODO: 实现清理过期文件夹
-        throw new UnsupportedOperationException("未实现");
+        log.info("开始清理过期文件夹");
+
+        try {
+            String pattern = REDIS_PREFIX_FOLDER + "*";
+            var keys = redisTemplate.keys(pattern);
+
+            if (keys == null || keys.isEmpty()) {
+                log.info("没有需要清理的过期文件夹");
+                return;
+            }
+
+            LocalDateTime now = LocalDateTime.now();
+            int cleanedCount = 0;
+
+            for (String key : keys) {
+                try {
+                    String folderJson = (String) redisTemplate.opsForValue().get(key);
+                    if (folderJson == null) {
+                        continue;
+                    }
+
+                    FolderInfo folderInfo = objectMapper.readValue(folderJson, FolderInfo.class);
+
+                    if (folderInfo.getExpireTime() != null && folderInfo.getExpireTime().isBefore(now)) {
+                        if (folderInfo.getFolderPath() != null) {
+                            StorageService storageService = storageServiceFactory.getStorageService(folderInfo.getStorageBackend());
+                            storageService.deleteFolder(folderInfo.getFolderPath());
+                        }
+
+                        redisTemplate.delete(key);
+                        redisTemplate.delete(REDIS_PREFIX_ACCESS_CODE + folderInfo.getAccessCode());
+                        folderInfos.remove(folderInfo.getAccessCode());
+
+                        cleanedCount++;
+                        log.debug("已清理过期文件夹: {}", folderInfo.getAccessCode());
+                    }
+                } catch (Exception e) {
+                    log.error("清理文件夹失败: {}", key, e);
+                }
+            }
+
+            log.info("清理过期文件夹完成，共清理 {} 个", cleanedCount);
+        } catch (Exception e) {
+            log.error("清理过期文件夹失败", e);
+            throw new BusinessException(ErrorCode.FOLDER_CLEANUP_FAILED, e.getMessage());
+        }
     }
 
     @Override
     public void deleteFolder(String accessCode) {
-        // TODO: 实现删除文件夹
-        throw new UnsupportedOperationException("未实现");
+        log.info("删除文件夹: {}", accessCode);
+
+        try {
+            FolderInfo folderInfo = getFolderInfoFromRedis(accessCode);
+            if (folderInfo == null) {
+                throw new BusinessException(ErrorCode.FOLDER_NOT_FOUND);
+            }
+
+            if (folderInfo.getFolderPath() != null) {
+                StorageService storageService = storageServiceFactory.getStorageService(folderInfo.getStorageBackend());
+                storageService.deleteFolder(folderInfo.getFolderPath());
+            }
+
+            redisTemplate.delete(REDIS_PREFIX_FOLDER + accessCode);
+            redisTemplate.delete(REDIS_PREFIX_ACCESS_CODE + accessCode);
+            folderInfos.remove(accessCode);
+
+            log.info("删除文件夹成功: {}", accessCode);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("删除文件夹失败", e);
+            throw new BusinessException(ErrorCode.FOLDER_DELETE_FAILED, e.getMessage());
+        }
     }
 
     @Override
     public void batchDeleteFolders(List<String> accessCodes) {
-        // TODO: 实现批量删除文件夹
-        throw new UnsupportedOperationException("未实现");
+        log.info("批量删除文件夹: {} 个", accessCodes.size());
+
+        try {
+            for (String accessCode : accessCodes) {
+                deleteFolder(accessCode);
+            }
+
+            log.info("批量删除文件夹完成: {} 个", accessCodes.size());
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("批量删除文件夹失败", e);
+            throw new BusinessException(ErrorCode.FOLDER_DELETE_FAILED, e.getMessage());
+        }
     }
 
-    @Override
-    public FolderStats getFolderStats() {
-        // TODO: 实现获取文件夹统计信息
-        throw new UnsupportedOperationException("未实现");
-    }
-
-    @Override
-    public UploadSessionStats getUploadSessionStats() {
-        // TODO: 实现获取上传会话统计
-        throw new UnsupportedOperationException("未实现");
-    }
-
-    @Override
-    public StorageUsageStats getStorageUsageStats() {
-        // TODO: 实现获取存储使用情况
-        throw new UnsupportedOperationException("未实现");
-    }
-
-    @Override
-    public boolean validateFolderName(String folderName) {
-        // TODO: 实现验证文件夹名称
-        return StringUtils.hasText(folderName) && folderName.length() <= 255;
-    }
+    // ==================== 工具方法 ====================
 
     @Override
     public boolean validateFilePath(String relativePath) {
-        if (!StringUtils.hasText(relativePath)) {
+        if (relativePath == null || relativePath.trim().isEmpty()) {
             return false;
         }
-        // 检查URL编码的 .. (防止 %2e%2e 绕过)
         try {
             String decoded = URLDecoder.decode(relativePath, StandardCharsets.UTF_8.name());
-            // 检查各种路径遍历模式
             if (decoded.contains("..") || decoded.contains("\\")) {
                 return false;
             }
-            // 检查混合路径分隔符
             if (decoded.contains("/../") || decoded.startsWith("../") || decoded.endsWith("/..")) {
                 return false;
             }
@@ -837,23 +735,5 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             return false;
         }
         return true;
-    }
-
-    @Override
-    public String calculateFolderHash(String accessCode) {
-        // TODO: 实现计算文件夹哈希值
-        throw new UnsupportedOperationException("未实现");
-    }
-
-    @Override
-    public void addFolderEventListener(FolderEventListener listener) {
-        if (listener != null && !listeners.contains(listener)) {
-            listeners.add(listener);
-        }
-    }
-
-    @Override
-    public void removeFolderEventListener(FolderEventListener listener) {
-        listeners.remove(listener);
     }
 }
