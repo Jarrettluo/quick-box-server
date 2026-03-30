@@ -594,9 +594,18 @@ public class LocalFileStorageService extends AbstractStorageService {
                 // 构建目标文件路径
                 Path targetDir = finalFolder;
                 if (relativePath != null && !relativePath.isEmpty()) {
-                    // 将相对路径中的 "/" 替换为文件系统路径分隔符
+                    // 去掉 relativePath 中可能包含的文件名部分，只保留目录路径
+                    // 例如: relativePath = "中型文件夹/附件：xxx.pdf", filename = "附件：xxx.pdf"
+                    // 只取 "中型文件夹" 作为目录
                     Path relativePath_ = Paths.get(relativePath);
-                    targetDir = finalFolder.resolve(relativePath_);
+                    int nameCount = relativePath_.getNameCount();
+                    if (nameCount > 1) {
+                        // relativePath 包含多层路径，取父目录
+                        targetDir = finalFolder.resolve(relativePath_.subpath(0, nameCount - 1));
+                    } else if (nameCount == 1) {
+                        // relativePath 只有一层（即 relativePath 本身就是文件名所在的目录）
+                        targetDir = finalFolder.resolve(relativePath_.getName(0));
+                    }
                 }
                 Files.createDirectories(targetDir);
                 Path targetFile = targetDir.resolve(filename);
