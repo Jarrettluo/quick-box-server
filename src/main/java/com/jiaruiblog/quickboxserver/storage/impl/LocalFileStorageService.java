@@ -567,9 +567,8 @@ public class LocalFileStorageService extends AbstractStorageService {
 
             String folderId = (String) metadata.get("folderId");
             String folderName = (String) metadata.get("folderName");
-            // finalFolder 是最终文件夹的根目录，即 filePath/folderId（不再嵌套 folderName）
-            // 因为 relativePath 已经包含了 folderName
-            Path finalFolder = filePath.resolve(folderId);
+            // finalFolder 是最终文件夹的根目录，即 filePath/folderId/folderName
+            Path finalFolder = filePath.resolve(folderId).resolve(folderName);
 
             // 创建目标文件夹
             Files.createDirectories(finalFolder);
@@ -609,10 +608,10 @@ public class LocalFileStorageService extends AbstractStorageService {
                 String filename = decoded[1];
 
                 // 构建目标文件路径
-                // vue-simple-uploader 的 relativePath 是文件的相对路径（包含目录和文件名）
-                // 例如: folderName = "中型文件夹", relativePath = "中型文件夹/内层文件夹/2.报考须知.doc"
-                // filename = "2.报考须知.doc"
-                // 正确的目标路径应该是 finalFolder/内层文件夹/2.报考须知.doc
+                // vue-simple-uploader 的 relativePath 是相对于上传根目录（folderName）的路径
+                // 例如: folderName = "大型文件夹", relativePath = "大型文件夹/一层文件夹/..."
+                // relativePath 可能包含 folderName，也可能不包含
+                // 目标路径应该是 filePath/folderId/folderName/（relativePath去掉folderName后的部分）
                 Path targetDir = finalFolder;
                 if (relativePath != null && !relativePath.isEmpty()) {
                     // 从 relativePath 中分离出目录部分（去掉文件名）
@@ -626,26 +625,28 @@ public class LocalFileStorageService extends AbstractStorageService {
                     }
 
                     if (!relativePathDir.isEmpty()) {
-                        // 检查 relativePathDir 的第一层是否等于 folderName
-                        int firstSlashIndex = relativePathDir.indexOf("/");
-                        String firstLayer = (firstSlashIndex > 0) ? relativePathDir.substring(0, firstSlashIndex) : relativePathDir;
-
-                        if (firstLayer.equals(folderName)) {
-                            // relativePath 包含 folderName 作为第一层，去掉它
-                            if (firstSlashIndex > 0) {
-                                // 还有更多层级
-                                String remainingPath = relativePathDir.substring(firstSlashIndex + 1);
-                                if (!remainingPath.isEmpty()) {
-                                    targetDir = finalFolder.resolve(remainingPath);
-                                }
+                        // 检查 relativePathDir 是否等于 folderName（relativePath 不包含子目录）
+                        if (relativePathDir.equals(folderName)) {
+                            // relativePathDir 就是 folderName，文件直接在 finalFolder 下
+                            targetDir = finalFolder;
+                        } else if (relativePathDir.startsWith(folderName + "/")) {
+                            // relativePath 包含 folderName 作为前缀，去掉它得到子目录
+                            String subPath = relativePathDir.substring(folderName.length() + 1);
+                            if (!subPath.isEmpty()) {
+                                targetDir = finalFolder.resolve(subPath);
                             }
-                            // 如果 firstSlashIndex <= 0，说明 relativePathDir 就是 folderName，targetDir 就是 finalFolder
                         } else {
-                            // relativePath 不包含 folderName，使用完整的 relativePathDir
+                            // relativePath 不包含 folderName（vue-simple-uploader 可能没有传递完整路径）
+                            // 这种情况下，relativePath 本身就应该作为子目录
                             targetDir = finalFolder.resolve(relativePathDir);
                         }
+                    } else {
+                        // relativePathDir 为空，说明 relativePath 只有文件名，文件直接在 finalFolder 下
+                        targetDir = finalFolder;
                     }
-                    // 如果 relativePathDir 为空，targetDir 就是 finalFolder（文件直接在 finalFolder 下）
+                } else {
+                    // relativePath 为空，文件直接在 finalFolder 下
+                    targetDir = finalFolder;
                 }
                 Files.createDirectories(targetDir);
                 Path targetFile = targetDir.resolve(filename);
