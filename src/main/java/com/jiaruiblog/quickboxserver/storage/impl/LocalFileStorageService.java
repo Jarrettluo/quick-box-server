@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 
 import java.io.*;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -440,8 +441,8 @@ public class LocalFileStorageService extends AbstractStorageService {
         String encodedFileName = encodeChunkFileName(relativePath, filename, chunkNumber);
         Path chunkFile = chunkPath.resolve(sessionId).resolve(encodedFileName);
 
-        log.info("文件夹分片上传: session={}, chunk={}, path={}, file={}",
-                 sessionId, chunkNumber, relativePath, filename);
+        log.info("文件夹分片上传: session={}, chunk={}, path={}, file={}, 编码后文件名={}",
+                 sessionId, chunkNumber, relativePath, filename, encodedFileName);
 
         try {
             ReentrantLock lock = fileLocks.computeIfAbsent(sessionId, k -> new ReentrantLock());
@@ -486,17 +487,26 @@ public class LocalFileStorageService extends AbstractStorageService {
         if (relativePath == null || relativePath.isEmpty()) {
             encodedPath = "_";
         } else {
+            // 如果relativePath包含URL编码字符（如%2F），先解码
+            String pathToEncode = relativePath;
+            if (relativePath.contains("%")) {
+                try {
+                    pathToEncode = URLDecoder.decode(relativePath, StandardCharsets.UTF_8);
+                } catch (Exception e) {
+                    pathToEncode = relativePath;
+                }
+            }
             // 使用URL-safe Base64编码relativePath，避免下划线混淆
             encodedPath = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(relativePath.getBytes(StandardCharsets.UTF_8));
+                .encodeToString(pathToEncode.getBytes(StandardCharsets.UTF_8));
         }
-        // 使用 "||" 作为编码路径和文件名的分隔符，"_" 作为分片号分隔符
-        return encodedPath + "||" + filename + "_" + chunkNumber;
+        // 使用 "__" 作为编码路径和文件名的分隔符（避免Windows非法字符 | ），"_" 作为分片号分隔符
+        return encodedPath + "__" + filename + "_" + chunkNumber;
     }
 
     /**
      * 解码：从 chunk 文件名还原 relativePath 和 filename
-     * @param encodedFileName 编码后的文件名，如 "bXlXZm9sZGVyL3N1YmRpcg==||c.txt_1"
+     * @param encodedFileName 编码后的文件名，如 "bXlXZm9sZGVyL3N1YmRpcg==__c.txt_1"
      * @return String[3] = [relativePath, filename, chunkNumberStr]
      */
     public static String[] decodeChunkFileName(String encodedFileName) {
@@ -505,14 +515,14 @@ public class LocalFileStorageService extends AbstractStorageService {
         String pathAndFile = encodedFileName.substring(0, lastUnderscore);
         String chunkNumberStr = encodedFileName.substring(lastUnderscore + 1);
 
-        // 找到双竖线（路径和文件名分隔符）
-        int doubleBar = pathAndFile.indexOf("||");
-        if (doubleBar == -1) {
+        // 找到双下划线（路径和文件名分隔符）
+        int doubleUnderscore = pathAndFile.indexOf("__");
+        if (doubleUnderscore == -1) {
             throw new IllegalArgumentException("Invalid chunk filename format: " + encodedFileName);
         }
 
-        String encodedPath = pathAndFile.substring(0, doubleBar);
-        String filename = pathAndFile.substring(doubleBar + 2);
+        String encodedPath = pathAndFile.substring(0, doubleUnderscore);
+        String filename = pathAndFile.substring(doubleUnderscore + 2);
 
         // 解码relativePath：空路径标记还原为空字符串，Base64编码的路径进行解码
         String relativePath;
@@ -618,8 +628,22 @@ public class LocalFileStorageService extends AbstractStorageService {
                 log.info("合并文件完成: {} -> {}", relativePath + "/" + filename, targetFile);
             }
 
-            // 删除 sessionDir 中的空目录
-            Files.deleteIfExists(sessionDir);
+            // 递归删除 sessionDir 及其所有子目录和文件
+            if (Files.exists(sessionDir)) {
+                Files.walkFileTree(sessionDir, new SimpleFileVisitor<>() {
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                        Files.delete(file);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                        Files.delete(dir);
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+            }
 
             // 保存文件夹结构信息
             String structureJson = (String) metadata.get("structureJson");

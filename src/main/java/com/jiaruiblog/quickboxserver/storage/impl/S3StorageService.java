@@ -22,6 +22,7 @@ import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -424,19 +425,28 @@ public class S3StorageService extends AbstractStorageService {
      * @param relativePath 相对路径 (可为 null 或空)
      * @param filename 文件名
      * @param chunkNumber 分片号
-     * @return 编码后的文件名，如 "bXlXZm9sZGVyL3N1YmRpcg==||c.txt_1" 或 "_||c.txt_1" (空路径时)
+     * @return 编码后的文件名，如 "bXlXZm9sZGVyL3N1YmRpcg==__c.txt_1" 或 "_||c.txt_1" (空路径时)
      */
     public static String encodeChunkFileName(String relativePath, String filename, int chunkNumber) {
         String encodedPath;
         if (relativePath == null || relativePath.isEmpty()) {
             encodedPath = "_";
         } else {
+            // 如果relativePath包含URL编码字符（如%2F），先解码
+            String pathToEncode = relativePath;
+            if (relativePath.contains("%")) {
+                try {
+                    pathToEncode = URLDecoder.decode(relativePath, StandardCharsets.UTF_8);
+                } catch (Exception e) {
+                    pathToEncode = relativePath;
+                }
+            }
             // 使用URL-safe Base64编码relativePath，避免下划线混淆
             encodedPath = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(relativePath.getBytes(StandardCharsets.UTF_8));
+                .encodeToString(pathToEncode.getBytes(StandardCharsets.UTF_8));
         }
-        // 使用 "||" 作为编码路径和文件名的分隔符，"_" 作为分片号分隔符
-        return encodedPath + "||" + filename + "_" + chunkNumber;
+        // 使用 "__" 作为编码路径和文件名的分隔符（避免Windows非法字符 | ），"_" 作为分片号分隔符
+        return encodedPath + "__" + filename + "_" + chunkNumber;
     }
 
     /**
@@ -450,14 +460,14 @@ public class S3StorageService extends AbstractStorageService {
         String pathAndFile = encodedFileName.substring(0, lastUnderscore);
         String chunkNumberStr = encodedFileName.substring(lastUnderscore + 1);
 
-        // 找到双竖线（路径和文件名分隔符）
-        int doubleBar = pathAndFile.indexOf("||");
-        if (doubleBar == -1) {
+        // 找到双下划线（路径和文件名分隔符）
+        int doubleUnderscore = pathAndFile.indexOf("__");
+        if (doubleUnderscore == -1) {
             throw new IllegalArgumentException("Invalid chunk filename format: " + encodedFileName);
         }
 
-        String encodedPath = pathAndFile.substring(0, doubleBar);
-        String filename = pathAndFile.substring(doubleBar + 2);
+        String encodedPath = pathAndFile.substring(0, doubleUnderscore);
+        String filename = pathAndFile.substring(doubleUnderscore + 2);
 
         // 解码relativePath：空路径标记还原为空字符串，Base64编码的路径进行解码
         String relativePath;

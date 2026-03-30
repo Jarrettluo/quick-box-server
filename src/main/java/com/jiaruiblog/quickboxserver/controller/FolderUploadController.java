@@ -78,10 +78,16 @@ public class FolderUploadController {
             @Parameter(description = "上传会话ID") @RequestParam("sessionId") String sessionId,
             @Parameter(description = "分片序号") @RequestParam("chunkNumber") Integer chunkNumber,
             @Parameter(description = "总分片数") @RequestParam("totalChunks") Integer totalChunks,
-            @Parameter(description = "当前分片大小") @RequestParam("currentChunkSize") Long currentChunkSize,
+            @Parameter(description = "当前分片大小") @RequestParam(value = "currentChunkSize", required = false) Long currentChunkSize,
+            @Parameter(description = "分片大小（vue-simple-uploader兼容）") @RequestParam(value = "chunkSize", required = false) Long chunkSize,
             @Parameter(description = "文件名") @RequestParam("filename") String filename,
             @Parameter(description = "相对路径") @RequestParam(value = "relativePath", required = false) String relativePath,
             @Parameter(description = "分片文件") @RequestParam("file") MultipartFile file) {
+
+        // 兼容 vue-simple-uploader 的 chunkSize 参数
+        if (currentChunkSize == null && chunkSize != null) {
+            currentChunkSize = chunkSize;
+        }
 
         log.info("收到文件夹分片上传请求: {} - {} ({} bytes)", sessionId, chunkNumber, currentChunkSize);
 
@@ -163,36 +169,6 @@ public class FolderUploadController {
         }
     }
 
-    @Operation(summary = "获取文件夹信息", description = "根据取件码获取文件夹信息")
-    @GetMapping("/info/{accessCode}")
-    public ApiResult<FolderInfoResponse> getFolderInfo(
-            @Parameter(description = "取件码") @PathVariable String accessCode,
-            HttpServletRequest httpRequest) {
-        log.debug("获取文件夹信息: {}", accessCode);
-
-        try {
-            // 获取文件夹信息
-            FolderInfoResponse response = folderUploadService.getFolderInfo(accessCode);
-
-            // 构建URL
-            String baseUrl = getBaseUrl(httpRequest);
-            response.setDownloadUrl(baseUrl + "/api/upload/folder/download/" + accessCode);
-
-            // 构建文件下载URL
-            if (response.getFiles() != null) {
-                for (FolderInfoResponse.FileInfo file : response.getFiles()) {
-                    file.setDownloadUrl(baseUrl + "/api/upload/folder/file/" + accessCode + "?path=" +
-                            URLEncoder.encode(file.getRelativePath(), StandardCharsets.UTF_8));
-                }
-            }
-
-            return ApiResult.success(response);
-        } catch (Exception e) {
-            log.error("获取文件夹信息失败", e);
-            return ApiResult.error(500, "获取文件夹信息失败: " + e.getMessage());
-        }
-    }
-
     // STEP5: 根据第一步取到的信息获取文件夹的详情
     @Operation(summary = "验证取件码", description = "验证取件码是否有效")
     @GetMapping("/validate/{accessCode}")
@@ -254,7 +230,6 @@ public class FolderUploadController {
     @PostMapping("/cleanup")
     public ApiResult<Void> cleanupExpiredFolders() {
         log.info("清理过期文件夹");
-
         try {
             folderUploadService.cleanupExpiredFolders();
             log.info("清理过期文件夹完成");
