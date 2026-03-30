@@ -23,7 +23,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -65,16 +64,15 @@ public class FolderUploadServiceImpl implements FolderUploadService {
         log.info("初始化文件夹上传: {}", request.getFolderName());
 
         try {
-            // 生成文件夹ID和取件码
-            String folderId = UUID.randomUUID().toString();
+            // 生成取件码（将作为存储文件夹名）
             String accessCode = generateAccessCode();
 
             // 选择存储服务
             StorageService storageService = storageStrategy.selectStorageServiceForFolder();
 
-            // 初始化文件夹上传会话
+            // 初始化文件夹上传会话，使用 accessCode 作为存储文件夹名
             String sessionId = storageService.initFolderUpload(
-                folderId,
+                accessCode,
                 request.getFolderName(),
                 request.getTotalFiles(),
                 request.getTotalSize(),
@@ -83,8 +81,8 @@ public class FolderUploadServiceImpl implements FolderUploadService {
 
             // 创建上传会话
             FolderUploadSession session = new FolderUploadSession();
-            session.setSessionId(sessionId);
-            session.setFolderId(folderId);
+            session.setSessionId(accessCode);  // 使用 accessCode 作为 sessionId
+            session.setFolderId(accessCode);    // folderId 也使用 accessCode
             session.setFolderName(request.getFolderName());
 
             session.setAccessCode(accessCode);
@@ -155,10 +153,9 @@ public class FolderUploadServiceImpl implements FolderUploadService {
             session.setUploadedChunks(session.getUploadedChunks() + 1);
             session.setUploadedSize(session.getUploadedSize() + request.getCurrentChunkSize());
 
-            // 如果是最后一个分片，更新状态
-            if (request.isLastChunk()) {
-                session.setStatus(FolderUploadResponse.UploadStatus.MERGING);
-            }
+            // 注意：不要在这里根据 isLastChunk() 设置 MERGING 状态！
+            // isLastChunk() 判断的是单个文件的最后一块，不是整个文件夹的最后一块
+            // MERGING 状态应该只由 mergeFolderChunks API 来设置
 
             // 保存到Redis
             saveSessionToRedis(session);
@@ -180,6 +177,22 @@ public class FolderUploadServiceImpl implements FolderUploadService {
     }
 
     @Override
+    public boolean checkChunkExists(String sessionId, int chunkNumber, String relativePath, String filename) {
+        try {
+            FolderUploadSession session = getSession(sessionId);
+            if (session == null) {
+                return false;
+            }
+
+            StorageService storageService = storageServiceFactory.getStorageService(session.getStorageBackend());
+            return storageService.folderChunkExists(sessionId, chunkNumber, relativePath, filename);
+        } catch (Exception e) {
+            log.error("检查分片是否存在失败", e);
+            return false;
+        }
+    }
+
+    @Override
     public FolderUploadResponse mergeFolderChunks(String sessionId) {
         log.info("合并文件夹分片: {}", sessionId);
 
@@ -190,10 +203,10 @@ public class FolderUploadServiceImpl implements FolderUploadService {
                 throw new BusinessException(ErrorCode.SESSION_NOT_FOUND);
             }
 
-            // 检查会话状态
-            if (session.getStatus() != FolderUploadResponse.UploadStatus.MERGING) {
-                throw new BusinessException(ErrorCode.SESSION_INVALID_STATE);
-            }
+            // 设置会话状态为 MERGING（表示开始合并）
+            session.setStatus(FolderUploadResponse.UploadStatus.MERGING);
+            session.setLastUpdateTime(LocalDateTime.now());
+            saveSessionToRedis(session);
 
             // 获取存储服务
             StorageService storageService = storageServiceFactory.getStorageService(session.getStorageBackend());

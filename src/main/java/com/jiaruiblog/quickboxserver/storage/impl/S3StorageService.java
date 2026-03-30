@@ -1,6 +1,9 @@
 package com.jiaruiblog.quickboxserver.storage.impl;
 
-import com.jiaruiblog.quickboxserver.storage.model.*;
+import com.jiaruiblog.quickboxserver.storage.model.FileInfo;
+import com.jiaruiblog.quickboxserver.storage.model.FolderInfo;
+import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
+import com.jiaruiblog.quickboxserver.storage.model.StorageHealth;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
@@ -12,24 +15,18 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -368,11 +365,11 @@ public class S3StorageService extends AbstractStorageService {
     public String initFolderUpload(String folderId, String folderName, int totalFiles, long totalSize, String structureJson) {
         validateFolderPath(folderId);
 
-        String sessionId = UUID.randomUUID().toString();
+        // 使用传入的 folderId（实际上是 accessCode）作为存储文件夹名
         String folderKey = buildObjectKey("folders", folderId, folderName) + "/";
 
         S3UploadSession session = new S3UploadSession();
-        session.setSessionId(sessionId);
+        session.setSessionId(folderId);
         session.setFolderId(folderId);
         session.setFolderName(folderName);
         session.setTotalFiles(totalFiles);
@@ -382,10 +379,10 @@ public class S3StorageService extends AbstractStorageService {
         session.setCreateTime(LocalDateTime.now());
         session.setFolderUpload(true);
 
-        uploadSessions.put(sessionId, session);
+        uploadSessions.put(folderId, session);
 
-        log.info("初始化S3文件夹上传: {} -> {} ({} files)", sessionId, folderKey, totalFiles);
-        return sessionId;
+        log.info("初始化S3文件夹上传: {} -> {} ({} files)", folderId, folderKey, totalFiles);
+        return folderId;
     }
 
     @Override
@@ -417,6 +414,11 @@ public class S3StorageService extends AbstractStorageService {
             log.error("上传S3文件夹分片失败", e);
             throw new RuntimeException("上传S3文件夹分片失败", e);
         }
+    }
+
+    @Override
+    public boolean folderChunkExists(String sessionId, int chunkNumber, String relativePath, String filename) {
+        return false;
     }
 
     /**

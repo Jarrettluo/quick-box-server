@@ -392,8 +392,8 @@ public class LocalFileStorageService extends AbstractStorageService {
     public String initFolderUpload(String folderId, String folderName, int totalFiles, long totalSize, String structureJson) {
         validateFolderPath(folderId);
 
-        String sessionId = UUID.randomUUID().toString();
-        Path sessionDir = chunkPath.resolve(sessionId);
+        // 使用传入的 folderId（实际上是 accessCode）作为存储文件夹名
+        Path sessionDir = chunkPath.resolve(folderId);
 
         try {
             Files.createDirectories(sessionDir);
@@ -411,9 +411,9 @@ public class LocalFileStorageService extends AbstractStorageService {
             String metadataJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(sessionMetadata);
             Files.writeString(sessionDir.resolve("metadata.json"), metadataJson);
 
-            // 创建并保存上传会话（重要：修复会话不存在问题）
+            // 创建并保存上传会话
             UploadSession session = new UploadSession();
-            session.setSessionId(sessionId);
+            session.setSessionId(folderId);
             session.setFileId(folderId);
             session.setFileName(folderName);
             session.setFileSize(totalSize);
@@ -422,11 +422,11 @@ public class LocalFileStorageService extends AbstractStorageService {
             session.setUploadedChunks(new HashSet<>());
 
             // 保存到上传会话列表
-            uploadSessions.put(sessionId, session);
+            uploadSessions.put(folderId, session);
 
             log.info("初始化文件夹上传会话: {} -> {} ({} files, {} bytes)",
-                sessionId, folderName, totalFiles, totalSize);
-            return sessionId;
+                folderId, folderName, totalFiles, totalSize);
+            return folderId;
         } catch (IOException e) {
             log.error("初始化文件夹上传失败", e);
             throw new RuntimeException("初始化文件夹上传失败", e);
@@ -472,6 +472,20 @@ public class LocalFileStorageService extends AbstractStorageService {
         } catch (IOException e) {
             log.error("文件夹分片上传失败", e);
             throw new RuntimeException("文件夹分片上传失败", e);
+        }
+    }
+
+    @Override
+    public boolean folderChunkExists(String sessionId, int chunkNumber, String relativePath, String filename) {
+        try {
+            String encodedFileName = encodeChunkFileName(relativePath, filename, chunkNumber);
+            Path chunkFile = chunkPath.resolve(sessionId).resolve(encodedFileName);
+            boolean exists = Files.exists(chunkFile);
+            log.debug("检查文件夹分片是否存在: {} - {} -> {}", sessionId, encodedFileName, exists);
+            return exists;
+        } catch (Exception e) {
+            log.error("检查文件夹分片是否存在失败", e);
+            return false;
         }
     }
 

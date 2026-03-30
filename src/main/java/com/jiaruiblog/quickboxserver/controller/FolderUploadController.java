@@ -45,16 +45,13 @@ public class FolderUploadController {
     public ApiResult<FolderUploadResponse> initFolderUpload(
             @RequestBody FolderUploadRequest request,
             HttpServletRequest httpRequest) {
-
         log.info("收到文件夹上传初始化请求: {}", request.getFolderName());
-
         try {
             // 验证请求
             request.validate();
 
             // 初始化上传
             FolderUploadResponse response = folderUploadService.initFolderUpload(request);
-
             // 构建下载URL
             String baseUrl = getBaseUrl(httpRequest);
             response.setDownloadUrl(baseUrl + "/api/upload/folder/download/" + response.getAccessCode());
@@ -116,6 +113,30 @@ public class FolderUploadController {
         } catch (Exception e) {
             log.error("文件夹分片上传失败", e);
             return ApiResult.error(500, "文件夹分片上传失败: " + e.getMessage());
+        }
+    }
+
+    // HEAD 请求用于 vue-simple-uploader 的 testChunks 功能
+    @Operation(summary = "检查分片是否存在", description = "检查文件夹分片是否已上传（用于testChunks）")
+    @RequestMapping(value = "/chunk", method = RequestMethod.HEAD)
+    public ResponseEntity<Void> checkChunkExists(
+            @Parameter(description = "上传会话ID") @RequestParam("sessionId") String sessionId,
+            @Parameter(description = "分片序号") @RequestParam("chunkNumber") Integer chunkNumber,
+            @Parameter(description = "总分片数") @RequestParam("totalChunks") Integer totalChunks,
+            @Parameter(description = "文件名") @RequestParam("filename") String filename,
+            @Parameter(description = "相对路径") @RequestParam(value = "relativePath", required = false) String relativePath) {
+        log.debug("检查分片是否存在: {} - {}", sessionId, chunkNumber);
+
+        try {
+            boolean exists = folderUploadService.checkChunkExists(sessionId, chunkNumber, relativePath, filename);
+            if (exists) {
+                return ResponseEntity.ok().build();
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            log.error("检查分片是否存在失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 

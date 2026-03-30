@@ -26,6 +26,16 @@ public interface FolderUploadService {
     FolderUploadResponse uploadFolderChunk(FolderChunkUploadRequest request);
 
     /**
+     * 检查文件夹分片是否存在（用于 testChunks 功能）
+     * @param sessionId 上传会话ID
+     * @param chunkNumber 分片序号
+     * @param relativePath 相对路径
+     * @param filename 文件名
+     * @return 分片是否存在
+     */
+    boolean checkChunkExists(String sessionId, int chunkNumber, String relativePath, String filename);
+
+    /**
      * 合并文件夹分片
      * @param sessionId 上传会话ID
      * @return 合并结果响应

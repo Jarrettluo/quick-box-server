@@ -122,6 +122,16 @@ public interface StorageService {
                           String relativePath, String filename);
 
     /**
+     * 检查文件夹分片是否存在（用于 testChunks 功能）
+     * @param sessionId 上传会话ID
+     * @param chunkNumber 分片序号
+     * @param relativePath 相对路径
+     * @param filename 文件名
+     * @return 是否已上传
+     */
+    boolean folderChunkExists(String sessionId, int chunkNumber, String relativePath, String filename);
+
+    /**
      * 合并文件夹分片并解压
      * @param sessionId 上传会话ID
      * @return 文件夹路径

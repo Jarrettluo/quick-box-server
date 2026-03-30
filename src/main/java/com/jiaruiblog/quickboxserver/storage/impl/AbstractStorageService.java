@@ -282,6 +282,17 @@ public abstract class AbstractStorageService implements StorageService {
     }
 
     @Override
+    public void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize,
+                                  String relativePath, String filename) {
+        throw new UnsupportedOperationException("文件夹分片上传不支持");
+    }
+
+    @Override
+    public boolean folderChunkExists(String sessionId, int chunkNumber, String relativePath, String filename) {
+        throw new UnsupportedOperationException("文件夹分片存在检查不支持");
+    }
+
+    @Override
     public String mergeFolderChunks(String sessionId) {
         throw new UnsupportedOperationException("文件夹分片合并不支持");
     }
