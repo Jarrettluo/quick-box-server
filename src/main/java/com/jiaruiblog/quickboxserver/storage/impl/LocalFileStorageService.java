@@ -609,35 +609,43 @@ public class LocalFileStorageService extends AbstractStorageService {
                 String filename = decoded[1];
 
                 // 构建目标文件路径
-                // vue-simple-uploader 的 relativePath 是完整路径（相对于上传根目录），包含 folderName
+                // vue-simple-uploader 的 relativePath 是文件的相对路径（包含目录和文件名）
                 // 例如: folderName = "中型文件夹", relativePath = "中型文件夹/内层文件夹/2.报考须知.doc"
-                // 分离后 filename = "2.报考须知.doc", relativePath = "中型文件夹/内层文件夹"
-                // 所以 targetDir 应该是 finalFolder 加上 relativePath 去掉第一层（folderName）的部分
+                // filename = "2.报考须知.doc"
+                // 正确的目标路径应该是 finalFolder/内层文件夹/2.报考须知.doc
                 Path targetDir = finalFolder;
                 if (relativePath != null && !relativePath.isEmpty()) {
-                    Path relativePath_ = Paths.get(relativePath);
-                    int nameCount = relativePath_.getNameCount();
+                    // 从 relativePath 中分离出目录部分（去掉文件名）
+                    String relativePathDir = relativePath;
+                    if (relativePath.endsWith(filename)) {
+                        relativePathDir = relativePath.substring(0, relativePath.length() - filename.length());
+                    }
+                    // 去掉末尾的 "/"（如果有）
+                    if (relativePathDir.endsWith("/")) {
+                        relativePathDir = relativePathDir.substring(0, relativePathDir.length() - 1);
+                    }
 
-                    // 检查 relativePath 的第一层是否等于 folderName
-                    // 如果是，说明 relativePath 包含了 folderName，需要去掉第一层
-                    if (nameCount >= 1) {
-                        String firstLayer = relativePath_.getName(0).toString();
+                    if (!relativePathDir.isEmpty()) {
+                        // 检查 relativePathDir 的第一层是否等于 folderName
+                        int firstSlashIndex = relativePathDir.indexOf("/");
+                        String firstLayer = (firstSlashIndex > 0) ? relativePathDir.substring(0, firstSlashIndex) : relativePathDir;
+
                         if (firstLayer.equals(folderName)) {
-                            // relativePath 包含 folderName，去掉第一层
-                            if (nameCount > 1) {
+                            // relativePath 包含 folderName 作为第一层，去掉它
+                            if (firstSlashIndex > 0) {
                                 // 还有更多层级
-                                targetDir = finalFolder.resolve(relativePath_.subpath(1, nameCount - 1));
+                                String remainingPath = relativePathDir.substring(firstSlashIndex + 1);
+                                if (!remainingPath.isEmpty()) {
+                                    targetDir = finalFolder.resolve(remainingPath);
+                                }
                             }
-                            // 如果 nameCount == 1，targetDir 就是 finalFolder（文件直接在 finalFolder 下）
+                            // 如果 firstSlashIndex <= 0，说明 relativePathDir 就是 folderName，targetDir 就是 finalFolder
                         } else {
-                            // relativePath 不包含 folderName，使用完整的 relativePath
-                            if (nameCount > 1) {
-                                targetDir = finalFolder.resolve(relativePath_.subpath(0, nameCount - 1));
-                            } else if (nameCount == 1) {
-                                targetDir = finalFolder.resolve(relativePath_.getName(0));
-                            }
+                            // relativePath 不包含 folderName，使用完整的 relativePathDir
+                            targetDir = finalFolder.resolve(relativePathDir);
                         }
                     }
+                    // 如果 relativePathDir 为空，targetDir 就是 finalFolder（文件直接在 finalFolder 下）
                 }
                 Files.createDirectories(targetDir);
                 Path targetFile = targetDir.resolve(filename);
