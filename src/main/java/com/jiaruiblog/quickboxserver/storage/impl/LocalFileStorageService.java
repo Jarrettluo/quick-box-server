@@ -567,7 +567,9 @@ public class LocalFileStorageService extends AbstractStorageService {
 
             String folderId = (String) metadata.get("folderId");
             String folderName = (String) metadata.get("folderName");
-            Path finalFolder = filePath.resolve(folderId).resolve(folderName);
+            // finalFolder 是最终文件夹的根目录，即 filePath/folderId（不再嵌套 folderName）
+            // 因为 relativePath 已经包含了 folderName
+            Path finalFolder = filePath.resolve(folderId);
 
             // 创建目标文件夹
             Files.createDirectories(finalFolder);
@@ -607,19 +609,34 @@ public class LocalFileStorageService extends AbstractStorageService {
                 String filename = decoded[1];
 
                 // 构建目标文件路径
+                // vue-simple-uploader 的 relativePath 是完整路径（相对于上传根目录），包含 folderName
+                // 例如: folderName = "中型文件夹", relativePath = "中型文件夹/内层文件夹/2.报考须知.doc"
+                // 分离后 filename = "2.报考须知.doc", relativePath = "中型文件夹/内层文件夹"
+                // 所以 targetDir 应该是 finalFolder 加上 relativePath 去掉第一层（folderName）的部分
                 Path targetDir = finalFolder;
                 if (relativePath != null && !relativePath.isEmpty()) {
-                    // 去掉 relativePath 中可能包含的文件名部分，只保留目录路径
-                    // 例如: relativePath = "中型文件夹/附件：xxx.pdf", filename = "附件：xxx.pdf"
-                    // 只取 "中型文件夹" 作为目录
                     Path relativePath_ = Paths.get(relativePath);
                     int nameCount = relativePath_.getNameCount();
-                    if (nameCount > 1) {
-                        // relativePath 包含多层路径，取父目录
-                        targetDir = finalFolder.resolve(relativePath_.subpath(0, nameCount - 1));
-                    } else if (nameCount == 1) {
-                        // relativePath 只有一层（即 relativePath 本身就是文件名所在的目录）
-                        targetDir = finalFolder.resolve(relativePath_.getName(0));
+
+                    // 检查 relativePath 的第一层是否等于 folderName
+                    // 如果是，说明 relativePath 包含了 folderName，需要去掉第一层
+                    if (nameCount >= 1) {
+                        String firstLayer = relativePath_.getName(0).toString();
+                        if (firstLayer.equals(folderName)) {
+                            // relativePath 包含 folderName，去掉第一层
+                            if (nameCount > 1) {
+                                // 还有更多层级
+                                targetDir = finalFolder.resolve(relativePath_.subpath(1, nameCount - 1));
+                            }
+                            // 如果 nameCount == 1，targetDir 就是 finalFolder（文件直接在 finalFolder 下）
+                        } else {
+                            // relativePath 不包含 folderName，使用完整的 relativePath
+                            if (nameCount > 1) {
+                                targetDir = finalFolder.resolve(relativePath_.subpath(0, nameCount - 1));
+                            } else if (nameCount == 1) {
+                                targetDir = finalFolder.resolve(relativePath_.getName(0));
+                            }
+                        }
                     }
                 }
                 Files.createDirectories(targetDir);
@@ -757,6 +774,9 @@ public class LocalFileStorageService extends AbstractStorageService {
 
                     if (metadata.containsKey("accessCode")) {
                         folderInfo.setAccessCode((String) metadata.get("accessCode"));
+                    }
+                    if (metadata.containsKey("folderName")) {
+                        folderInfo.setFolderName((String) metadata.get("folderName"));
                     }
                     if (metadata.containsKey("createTime")) {
                         folderInfo.setCreateTime(LocalDateTime.parse((String) metadata.get("createTime")));
