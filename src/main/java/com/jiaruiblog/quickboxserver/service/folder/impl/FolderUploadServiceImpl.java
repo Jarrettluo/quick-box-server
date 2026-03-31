@@ -10,7 +10,7 @@ import com.jiaruiblog.quickboxserver.model.folder.FolderUploadResponse;
 import com.jiaruiblog.quickboxserver.service.folder.FolderUploadService;
 import com.jiaruiblog.quickboxserver.storage.StorageService;
 import com.jiaruiblog.quickboxserver.storage.StorageServiceFactory;
-import com.jiaruiblog.quickboxserver.storage.strategy.ConfigurableStorageStrategy;
+import com.jiaruiblog.quickboxserver.storage.strategy.StorageStrategy;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -39,7 +39,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
 
     private StorageServiceFactory storageServiceFactory;
 
-    private ConfigurableStorageStrategy storageStrategy;
+    private StorageStrategy storageStrategy;
 
     private final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
