@@ -280,12 +280,12 @@ public class FileUploadServiceImpl implements FileUploadService {
             } catch (Exception e) {
                 log.warn("解析文件夹信息失败: {}", accessCode, e);
             }
-            throw new IllegalArgumentException("Folder not found or not ready");
+            throw new BusinessException(ErrorCode.FOLDER_NOT_FOUND_FOR_ACCESS_CODE);
         }
 
         // Check if access code exists in Redis
         if (Boolean.FALSE.equals(redisTemplate.hasKey(REDIS_KEY_PREFIX + accessCode))) {
-            throw new IllegalArgumentException("Invalid or expired access code");
+            throw new BusinessException(ErrorCode.INVALID_ACCESS_CODE);
         }
 
         // 获取存储服务类型
@@ -298,12 +298,12 @@ public class FileUploadServiceImpl implements FileUploadService {
             // Local 场景：保持原有逻辑
             File uploadDir = new File(fileStorageConfig.getFinalPathWithAccessCode(accessCode));
             if (!uploadDir.exists()) {
-                throw new IllegalArgumentException("Invalid access code");
+                throw new BusinessException(ErrorCode.INVALID_ACCESS_CODE);
             }
 
             File[] files = uploadDir.listFiles();
             if (files == null || files.length == 0) {
-                throw new IllegalArgumentException("No file found for this access code");
+                throw new BusinessException(ErrorCode.NO_FILE_FOUND_FOR_ACCESS_CODE);
             }
 
             return files[0];
@@ -378,7 +378,7 @@ public class FileUploadServiceImpl implements FileUploadService {
                 return result;
             }
 
-            throw new IllegalArgumentException("File not found for access code: " + accessCode);
+            throw new BusinessException(ErrorCode.FILE_NOT_EXISTS, accessCode);
         }
     }
 
@@ -425,7 +425,7 @@ public class FileUploadServiceImpl implements FileUploadService {
             // Invalidate the access code in Redis immediately
             redisTemplate.delete(REDIS_KEY_PREFIX + accessCode);
         } catch (IOException e) {
-            throw new RuntimeException("File cleanup failed: " + e.getMessage(), e);
+            throw new BusinessException(ErrorCode.FILE_CLEANUP_FAILED, e.getMessage(), e);
         }
     }
 
@@ -444,7 +444,7 @@ public class FileUploadServiceImpl implements FileUploadService {
             log.info("  Final path: {}", finalPath.toAbsolutePath());
         } catch (IOException e) {
             log.error("Failed to create storage directories", e);
-            throw new RuntimeException("Storage initialization failed", e);
+            throw new BusinessException(ErrorCode.STORAGE_DIRECTORY_INIT_FAILED, e.getMessage(), e);
         }
     }
 }

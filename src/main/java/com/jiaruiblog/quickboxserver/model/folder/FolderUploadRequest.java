@@ -1,5 +1,7 @@
 package com.jiaruiblog.quickboxserver.model.folder;
 
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import lombok.Data;
 
 /**
@@ -33,19 +35,19 @@ public class FolderUploadRequest {
      */
     public void validate() {
         if (folderName == null || folderName.trim().isEmpty()) {
-            throw new IllegalArgumentException("文件夹名称不能为空");
+            throw new BusinessException(ErrorCode.FOLDER_NAME_EMPTY);
         }
 
         if (totalFiles == null || totalFiles <= 0) {
-            throw new IllegalArgumentException("总文件数必须大于0");
+            throw new BusinessException(ErrorCode.TOTAL_FILES_MUST_POSITIVE);
         }
 
         if (totalSize == null || totalSize <= 0) {
-            throw new IllegalArgumentException("总大小必须大于0");
+            throw new BusinessException(ErrorCode.TOTAL_SIZE_MUST_POSITIVE);
         }
 
         if (expireSeconds != null && expireSeconds < 60) {
-            throw new IllegalArgumentException("过期时间必须至少60秒");
+            throw new BusinessException(ErrorCode.EXPIRE_TIME_TOO_SHORT);
         }
     }
 }

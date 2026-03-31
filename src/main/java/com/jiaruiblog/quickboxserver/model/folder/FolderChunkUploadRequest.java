@@ -1,5 +1,7 @@
 package com.jiaruiblog.quickboxserver.model.folder;
 
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import lombok.Data;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -48,35 +50,35 @@ public class FolderChunkUploadRequest {
      */
     public void validate() {
         if (sessionId == null || sessionId.trim().isEmpty()) {
-            throw new IllegalArgumentException("上传会话ID不能为空");
+            throw new BusinessException(ErrorCode.UPLOAD_SESSION_ID_EMPTY);
         }
 
         if (chunkNumber == null || chunkNumber < 1) {
-            throw new IllegalArgumentException("分片序号无效");
+            throw new BusinessException(ErrorCode.CHUNK_NUMBER_INVALID);
         }
 
         if (totalChunks == null || totalChunks <= 0) {
-            throw new IllegalArgumentException("总分片数必须大于0");
+            throw new BusinessException(ErrorCode.TOTAL_CHUNKS_MUST_POSITIVE);
         }
 
         if (chunkNumber > totalChunks) {
-            throw new IllegalArgumentException("分片序号不能大于总分片数");
+            throw new BusinessException(ErrorCode.CHUNK_NUMBER_EXCEEDS_TOTAL);
         }
 
         if (currentChunkSize == null || currentChunkSize <= 0) {
-            throw new IllegalArgumentException("当前分片大小必须大于0");
+            throw new BusinessException(ErrorCode.CHUNK_SIZE_MUST_POSITIVE);
         }
 
         if (filename == null || filename.trim().isEmpty()) {
-            throw new IllegalArgumentException("文件名不能为空");
+            throw new BusinessException(ErrorCode.FILE_NAME_EMPTY);
         }
 
         if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("分片文件不能为空");
+            throw new BusinessException(ErrorCode.CHUNK_FILE_EMPTY);
         }
 
         if (relativePath == null || relativePath.trim().isEmpty()) {
-            throw new IllegalArgumentException("相对路径不能为空");
+            throw new BusinessException(ErrorCode.RELATIVE_PATH_EMPTY);
         }
     }
 

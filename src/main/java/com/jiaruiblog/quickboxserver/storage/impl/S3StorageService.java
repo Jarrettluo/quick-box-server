@@ -1,5 +1,7 @@
 package com.jiaruiblog.quickboxserver.storage.impl;
 
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import com.jiaruiblog.quickboxserver.storage.model.FileInfo;
 import com.jiaruiblog.quickboxserver.storage.model.FolderInfo;
 import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
@@ -52,7 +54,7 @@ public class S3StorageService extends AbstractStorageService {
 
         StorageConfig.S3Config s3Config = config.getS3Config();
         if (s3Config == null) {
-            throw new IllegalArgumentException("S3配置不能为空");
+            throw new BusinessException(ErrorCode.STORAGE_CONFIG_EMPTY);
         }
 
         this.bucketName = s3Config.getBucketName();
@@ -97,7 +99,7 @@ public class S3StorageService extends AbstractStorageService {
             return builder.build();
         } catch (Exception e) {
             log.error("构建S3客户端失败", e);
-            throw new RuntimeException("构建S3客户端失败", e);
+            throw new BusinessException(ErrorCode.S3_CLIENT_BUILD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -133,10 +135,10 @@ public class S3StorageService extends AbstractStorageService {
 
         } catch (URISyntaxException e) {
             log.error("S3端点URL格式错误: {}", s3Config.getEndpoint(), e);
-            throw new RuntimeException("无效的S3端点配置", e);
+            throw new BusinessException(ErrorCode.S3_ENDPOINT_INVALID, e.getMessage(), e);
         } catch (Exception e) {
             log.error("构建S3预签名客户端失败", e);
-            throw new RuntimeException("构建S3预签名客户端失败", e);
+            throw new BusinessException(ErrorCode.S3_PRESIGNER_BUILD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -188,7 +190,7 @@ public class S3StorageService extends AbstractStorageService {
             log.debug("上传S3文件分片成功: {} - {} ({} bytes)", sessionId, chunkNumber, chunkSize);
         } catch (Exception e) {
             log.error("上传S3文件分片失败", e);
-            throw new RuntimeException("上传S3文件分片失败", e);
+            throw new BusinessException(ErrorCode.S3_CHUNK_UPLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -256,7 +258,7 @@ public class S3StorageService extends AbstractStorageService {
             return objectKey;
         } catch (Exception e) {
             log.error("合并S3文件分片失败", e);
-            throw new RuntimeException("合并S3文件分片失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_MERGE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -274,7 +276,7 @@ public class S3StorageService extends AbstractStorageService {
             return response;
         } catch (Exception e) {
             log.error("下载S3文件失败", e);
-            throw new RuntimeException("下载S3文件失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_DOWNLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -292,7 +294,7 @@ public class S3StorageService extends AbstractStorageService {
             return s3Client.headObject(request);
         } catch (Exception e) {
             log.error("获取S3对象元数据失败: {}", objectKey, e);
-            throw new RuntimeException("获取S3对象元数据失败", e);
+            throw new BusinessException(ErrorCode.S3_METADATA_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -311,7 +313,7 @@ public class S3StorageService extends AbstractStorageService {
             log.info("删除S3文件成功: {}", filePath);
         } catch (Exception e) {
             log.error("删除S3文件失败", e);
-            throw new RuntimeException("删除S3文件失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_DELETE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -367,10 +369,10 @@ public class S3StorageService extends AbstractStorageService {
             return fileInfo;
         } catch (NoSuchKeyException e) {
             log.error("S3文件不存在: {}", filePath);
-            throw new RuntimeException("文件不存在: " + filePath);
+            throw new BusinessException(ErrorCode.S3_FILE_NOT_EXISTS, filePath);
         } catch (Exception e) {
             log.error("获取S3文件信息失败", e);
-            throw new RuntimeException("获取文件信息失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_INFO_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -390,7 +392,7 @@ public class S3StorageService extends AbstractStorageService {
             return false;
         } catch (Exception e) {
             log.error("检查S3文件存在失败", e);
-            throw new RuntimeException("检查文件存在失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_EXISTS_CHECK_FAILED, e.getMessage(), e);
         }
     }
 
@@ -447,7 +449,7 @@ public class S3StorageService extends AbstractStorageService {
             log.debug("上传S3文件夹分片成功: {} - {} ({} bytes)", sessionId, chunkNumber, chunkSize);
         } catch (Exception e) {
             log.error("上传S3文件夹分片失败", e);
-            throw new RuntimeException("上传S3文件夹分片失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_CHUNK_UPLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -510,7 +512,7 @@ public class S3StorageService extends AbstractStorageService {
         // 找到双下划线（路径和文件名分隔符）
         int doubleUnderscore = pathAndFile.indexOf("__");
         if (doubleUnderscore == -1) {
-            throw new IllegalArgumentException("Invalid chunk filename format: " + encodedFileName);
+            throw new BusinessException(ErrorCode.INVALID_CHUNK_FILENAME_FORMAT, encodedFileName);
         }
 
         String encodedPath = pathAndFile.substring(0, doubleUnderscore);
@@ -536,7 +538,7 @@ public class S3StorageService extends AbstractStorageService {
     public String mergeFolderChunks(String sessionId) {
         S3UploadSession session = getUploadSession(sessionId);
         if (!session.isFolderUpload()) {
-            throw new IllegalArgumentException("不是文件夹上传会话");
+            throw new BusinessException(ErrorCode.NOT_A_FOLDER_UPLOAD);
         }
 
         try {
@@ -678,7 +680,7 @@ public class S3StorageService extends AbstractStorageService {
             return folderKey;
         } catch (Exception e) {
             log.error("合并S3文件夹分片失败", e);
-            throw new RuntimeException("合并S3文件夹分片失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_MERGE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -738,7 +740,7 @@ public class S3StorageService extends AbstractStorageService {
             return new ByteArrayInputStream(zipContent);
         } catch (Exception e) {
             log.error("下载S3文件夹为ZIP失败", e);
-            throw new RuntimeException("下载文件夹为ZIP失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_DOWNLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -750,13 +752,13 @@ public class S3StorageService extends AbstractStorageService {
             // 检查文件夹是否存在（通过检查元数据文件）
             String metadataKey = buildMetadataKey(folderPath);
             if (!objectExists(metadataKey)) {
-                throw new RuntimeException("文件夹不存在: " + folderPath);
+                throw new BusinessException(ErrorCode.S3_FOLDER_NOT_EXISTS, folderPath);
             }
 
             // 加载文件夹元数据
             Map<String, Object> metadata = loadMetadata(metadataKey);
             if (metadata == null) {
-                throw new RuntimeException("文件夹元数据不存在: " + folderPath);
+                throw new BusinessException(ErrorCode.S3_FOLDER_METADATA_NOT_EXISTS, folderPath);
             }
 
             FolderInfo folderInfo = new FolderInfo();
@@ -796,7 +798,7 @@ public class S3StorageService extends AbstractStorageService {
             return folderInfo;
         } catch (Exception e) {
             log.error("获取S3文件夹信息失败", e);
-            throw new RuntimeException("获取文件夹信息失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_INFO_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -810,7 +812,7 @@ public class S3StorageService extends AbstractStorageService {
             return objectExists(metadataKey);
         } catch (Exception e) {
             log.error("检查S3文件夹存在失败", e);
-            throw new RuntimeException("检查文件夹存在失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_EXISTS_CHECK_FAILED, e.getMessage(), e);
         }
     }
 
@@ -941,7 +943,7 @@ public class S3StorageService extends AbstractStorageService {
     private S3UploadSession getUploadSession(String sessionId) {
         S3UploadSession session = uploadSessions.get(sessionId);
         if (session == null) {
-            throw new IllegalArgumentException("上传会话不存在: " + sessionId);
+            throw new BusinessException(ErrorCode.UPLOAD_SESSION_NOT_EXISTS, sessionId);
         }
         return session;
     }

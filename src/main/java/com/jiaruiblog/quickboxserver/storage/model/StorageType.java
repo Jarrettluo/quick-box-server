@@ -1,5 +1,7 @@
 package com.jiaruiblog.quickboxserver.storage.model;
 
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import lombok.Getter;
 
 /**
@@ -26,6 +28,6 @@ public enum StorageType {
                 return type;
             }
         }
-        throw new IllegalArgumentException("未知的存储类型: " + code);
+        throw new BusinessException(ErrorCode.UNKNOWN_STORAGE_TYPE, code);
     }
 }

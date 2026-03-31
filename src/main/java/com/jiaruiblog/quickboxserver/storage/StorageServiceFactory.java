@@ -1,6 +1,8 @@
 package com.jiaruiblog.quickboxserver.storage;
 
 import com.jiaruiblog.quickboxserver.config.StorageProperties;
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import com.jiaruiblog.quickboxserver.storage.impl.LocalFileStorageService;
 import com.jiaruiblog.quickboxserver.storage.impl.S3StorageService;
 import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
@@ -92,7 +94,7 @@ public class StorageServiceFactory {
                 basePath, chunksPath, finalPath);
         } catch (Exception e) {
             log.error("初始化本地存储服务失败", e);
-            throw new RuntimeException("初始化本地存储服务失败", e);
+            throw new BusinessException(ErrorCode.STORAGE_INIT_LOCAL_FAILED, e.getMessage(), e);
         }
     }
 
@@ -134,9 +136,11 @@ public class StorageServiceFactory {
 
             log.info("创建 S3 存储服务: {} -> {}/{}",
                 storageService.getStorageName(), s3Config.getEndpoint(), s3Config.getBucketName());
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("初始化 S3 存储服务失败", e);
-            throw new RuntimeException("初始化 S3 存储服务失败", e);
+            throw new BusinessException(ErrorCode.STORAGE_INIT_S3_FAILED, e.getMessage(), e);
         }
     }
 
@@ -145,11 +149,11 @@ public class StorageServiceFactory {
      */
     public StorageService createStorageService(StorageConfig config) {
         if (config == null) {
-            throw new IllegalArgumentException("存储配置不能为空");
+            throw new BusinessException(ErrorCode.STORAGE_CONFIG_EMPTY);
         }
 
         if (!config.isEnabled()) {
-            throw new IllegalArgumentException("存储服务未启用: " + config.getName());
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_NOT_ENABLED, config.getName());
         }
 
         StorageType type = config.getType();
@@ -168,9 +172,9 @@ public class StorageServiceFactory {
                 break;
             case WEBDAV:
                 // TODO: 实现WebDAV存储服务
-                throw new UnsupportedOperationException("WebDAV存储服务暂未实现");
+                throw new BusinessException(ErrorCode.WEBDAV_NOT_IMPLEMENTED);
             default:
-                throw new IllegalArgumentException("不支持的存储类型: " + type);
+                throw new BusinessException(ErrorCode.STORAGE_TYPE_NOT_SUPPORTED, type.toString());
         }
 
         return storageService;
@@ -181,14 +185,14 @@ public class StorageServiceFactory {
      */
     public void registerStorageService(StorageService storageService) {
         if (storageService == null) {
-            throw new IllegalArgumentException("存储服务不能为空");
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_EMPTY);
         }
 
         String name = storageService.getStorageName();
         StorageType type = storageService.getStorageType();
 
         if (storageServices.containsKey(name)) {
-            throw new IllegalArgumentException("存储服务已存在: " + name);
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_ALREADY_EXISTS, name);
         }
 
         storageServices.put(name, storageService);
@@ -219,7 +223,7 @@ public class StorageServiceFactory {
     public StorageService getStorageService(String name) {
         StorageService service = storageServices.get(name);
         if (service == null) {
-            throw new IllegalArgumentException("存储服务不存在: " + name);
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_NOT_FOUND, name);
         }
         return service;
     }
@@ -230,7 +234,7 @@ public class StorageServiceFactory {
     public StorageService getStorageService(StorageType type) {
         StorageService service = defaultServices.get(type);
         if (service == null) {
-            throw new IllegalArgumentException("该类型的存储服务不存在: " + type);
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_NOT_FOUND, type.toString());
         }
         return service;
     }
@@ -240,7 +244,7 @@ public class StorageServiceFactory {
      */
     public StorageService getPrimaryStorageService() {
         if (primaryStorageService == null) {
-            throw new IllegalStateException("未设置主存储服务");
+            throw new BusinessException(ErrorCode.PRIMARY_STORAGE_NOT_SET);
         }
         return primaryStorageService;
     }
@@ -348,7 +352,7 @@ public class StorageServiceFactory {
      */
     public void reloadStorageService(String name, StorageConfig newConfig) {
         if (!storageServices.containsKey(name)) {
-            throw new IllegalArgumentException("存储服务不存在: " + name);
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_NOT_FOUND, name);
         }
 
         // 移除旧服务

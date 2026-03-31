@@ -1,5 +1,7 @@
 package com.jiaruiblog.quickboxserver.storage.impl;
 
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import com.jiaruiblog.quickboxserver.storage.model.FileInfo;
 import com.jiaruiblog.quickboxserver.storage.model.FolderInfo;
 import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
@@ -42,7 +44,7 @@ public class LocalFileStorageService extends AbstractStorageService {
 
         StorageConfig.LocalConfig localConfig = config.getLocalConfig();
         if (localConfig == null) {
-            throw new IllegalArgumentException("本地存储配置不能为空");
+            throw new BusinessException(ErrorCode.STORAGE_CONFIG_EMPTY);
         }
 
         this.basePath = Paths.get(localConfig.getBasePath()).toAbsolutePath();
@@ -76,7 +78,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             log.info("创建存储目录成功");
         } catch (IOException e) {
             log.error("创建存储目录失败", e);
-            throw new RuntimeException("无法创建存储目录", e);
+            throw new BusinessException(ErrorCode.LOCAL_DIRECTORY_CREATE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -122,7 +124,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return sessionId;
         } catch (IOException e) {
             log.error("初始化文件上传失败", e);
-            throw new RuntimeException("初始化文件上传失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_UPLOAD_INIT_FAILED, e.getMessage(), e);
         }
     }
 
@@ -165,7 +167,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             }
         } catch (IOException e) {
             log.error("上传文件分片失败", e);
-            throw new RuntimeException("上传文件分片失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_CHUNK_UPLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -200,7 +202,7 @@ public class LocalFileStorageService extends AbstractStorageService {
 
             // 验证分片完整性
             if (chunkFiles.size() != session.getUploadedChunks().size()) {
-                throw new IllegalStateException("分片数量不匹配");
+                throw new BusinessException(ErrorCode.CHUNK_COUNT_MISMATCH);
             }
 
             // 合并分片
@@ -219,7 +221,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             // 验证文件大小
             long actualSize = Files.size(finalFile);
             if (actualSize != session.getFileSize()) {
-                throw new IllegalStateException(String.format("文件大小不匹配: 期望 %d, 实际 %d", session.getFileSize(), actualSize));
+                throw new BusinessException(ErrorCode.FILE_SIZE_MISMATCH, new Object[]{session.getFileSize(), actualSize});
             }
 
             // 清理分片文件
@@ -240,7 +242,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return filePathStr;
         } catch (IOException e) {
             log.error("合并文件分片失败", e);
-            throw new RuntimeException("合并文件分片失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_MERGE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -296,7 +298,7 @@ public class LocalFileStorageService extends AbstractStorageService {
         } catch (IOException e) {
             log.error("下载文件失败", e);
             fireFileDownloadFailed(createBasicFileInfo(filePath), e.getMessage());
-            throw new RuntimeException("下载文件失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_DOWNLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -321,7 +323,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             fireFileDeleted(fileInfo);
         } catch (IOException e) {
             log.error("删除文件失败", e);
-            throw new RuntimeException("删除文件失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_DELETE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -390,7 +392,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return fileInfo;
         } catch (IOException e) {
             log.error("获取文件信息失败", e);
-            throw new RuntimeException("获取文件信息失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_INFO_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -444,7 +446,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return folderId;
         } catch (IOException e) {
             log.error("初始化文件夹上传失败", e);
-            throw new RuntimeException("初始化文件夹上传失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_UPLOAD_INIT_FAILED, e.getMessage(), e);
         }
     }
 
@@ -486,7 +488,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             }
         } catch (IOException e) {
             log.error("文件夹分片上传失败", e);
-            throw new RuntimeException("文件夹分片上传失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_CHUNK_UPLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -548,7 +550,7 @@ public class LocalFileStorageService extends AbstractStorageService {
         // 找到双下划线（路径和文件名分隔符）
         int doubleUnderscore = pathAndFile.indexOf("__");
         if (doubleUnderscore == -1) {
-            throw new IllegalArgumentException("Invalid chunk filename format: " + encodedFileName);
+            throw new BusinessException(ErrorCode.INVALID_CHUNK_FILENAME_FORMAT, encodedFileName);
         }
 
         String encodedPath = pathAndFile.substring(0, doubleUnderscore);
@@ -733,7 +735,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return folderPathStr;
         } catch (IOException e) {
             log.error("合并文件夹分片失败", e);
-            throw new RuntimeException("合并文件夹分片失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_MERGE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -765,7 +767,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             };
         } catch (IOException e) {
             log.error("下载文件夹为ZIP失败", e);
-            throw new RuntimeException("下载文件夹为ZIP失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_DOWNLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -829,7 +831,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return folderInfo;
         } catch (IOException e) {
             log.error("获取文件夹信息失败", e);
-            throw new RuntimeException("获取文件夹信息失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_INFO_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -961,7 +963,7 @@ public class LocalFileStorageService extends AbstractStorageService {
 
     private void validateUploadSession(String sessionId) {
         if (!uploadSessions.containsKey(sessionId)) {
-            throw new IllegalArgumentException("上传会话不存在: " + sessionId);
+            throw new BusinessException(ErrorCode.UPLOAD_SESSION_NOT_EXISTS, sessionId);
         }
     }
 

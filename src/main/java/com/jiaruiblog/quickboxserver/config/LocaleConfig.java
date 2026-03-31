@@ -1,5 +1,7 @@
 package com.jiaruiblog.quickboxserver.config;
 
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -35,7 +37,7 @@ public class LocaleConfig {
 
             @Override
             public void setLocale(HttpServletRequest request, HttpServletResponse response, Locale locale) {
-                throw new UnsupportedOperationException("禁止动态修改Locale");
+                throw new BusinessException(ErrorCode.LOCALE_CHANGE_NOT_ALLOWED);
             }
         };
     }

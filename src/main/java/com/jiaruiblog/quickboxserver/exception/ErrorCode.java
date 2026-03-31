@@ -116,7 +116,98 @@ public enum ErrorCode {
     ZIP_CREATION_FAILED(13001, "error-code.zip-creation-failed"),
     ZIP_EXTRACTION_FAILED(13002, "error-code.zip-extraction-failed"),
     INVALID_ZIP_FORMAT(13003, "error-code.invalid-zip-format"),
-    ZIP_SIZE_EXCEEDED(13004, "error-code.zip-size-exceeded");
+    ZIP_SIZE_EXCEEDED(13004, "error-code.zip-size-exceeded"),
+
+    // Storage Init Related
+    STORAGE_INIT_FAILED(14001, "error-code.storage-init-failed"),
+    STORAGE_INIT_LOCAL_FAILED(14002, "error-code.storage-init-local-failed"),
+    STORAGE_INIT_S3_FAILED(14003, "error-code.storage-init-s3-failed"),
+
+    // S3 Related
+    S3_CLIENT_BUILD_FAILED(14101, "error-code.s3-client-build-failed"),
+    S3_ENDPOINT_INVALID(14102, "error-code.s3-endpoint-invalid"),
+    S3_PRESIGNER_BUILD_FAILED(14103, "error-code.s3-presigner-build-failed"),
+    S3_CHUNK_UPLOAD_FAILED(14104, "error-code.s3-chunk-upload-failed"),
+    S3_FILE_MERGE_FAILED(14105, "error-code.s3-file-merge-failed"),
+    S3_FILE_DOWNLOAD_FAILED(14106, "error-code.s3-file-download-failed"),
+    S3_METADATA_GET_FAILED(14107, "error-code.s3-metadata-get-failed"),
+    S3_FILE_DELETE_FAILED(14108, "error-code.s3-file-delete-failed"),
+    S3_FILE_NOT_EXISTS(14109, "error-code.s3-file-not-exists"),
+    S3_FILE_INFO_GET_FAILED(14110, "error-code.s3-file-info-get-failed"),
+    S3_FILE_EXISTS_CHECK_FAILED(14111, "error-code.s3-file-exists-check-failed"),
+    S3_FOLDER_CHUNK_UPLOAD_FAILED(14112, "error-code.s3-folder-chunk-upload-failed"),
+    S3_FOLDER_MERGE_FAILED(14113, "error-code.s3-folder-merge-failed"),
+    S3_FOLDER_DOWNLOAD_FAILED(14114, "error-code.s3-folder-download-failed"),
+    S3_FOLDER_NOT_EXISTS(14115, "error-code.s3-folder-not-exists"),
+    S3_FOLDER_METADATA_NOT_EXISTS(14116, "error-code.s3-folder-metadata-not-exists"),
+    S3_FOLDER_INFO_GET_FAILED(14117, "error-code.s3-folder-info-get-failed"),
+    S3_FOLDER_EXISTS_CHECK_FAILED(14118, "error-code.s3-folder-exists-check-failed"),
+
+    // Local Storage Related
+    LOCAL_DIRECTORY_CREATE_FAILED(14201, "error-code.local-directory-create-failed"),
+    LOCAL_FILE_UPLOAD_INIT_FAILED(14202, "error-code.local-file-upload-init-failed"),
+    LOCAL_CHUNK_UPLOAD_FAILED(14203, "error-code.local-chunk-upload-failed"),
+    LOCAL_FILE_MERGE_FAILED(14204, "error-code.local-file-merge-failed"),
+    LOCAL_FILE_DOWNLOAD_FAILED(14205, "error-code.local-file-download-failed"),
+    LOCAL_FILE_DELETE_FAILED(14206, "error-code.local-file-delete-failed"),
+    LOCAL_FILE_INFO_GET_FAILED(14207, "error-code.local-file-info-get-failed"),
+    LOCAL_FOLDER_UPLOAD_INIT_FAILED(14208, "error-code.local-folder-upload-init-failed"),
+    LOCAL_FOLDER_CHUNK_UPLOAD_FAILED(14209, "error-code.local-folder-chunk-upload-failed"),
+    LOCAL_FOLDER_MERGE_FAILED(14210, "error-code.local-folder-merge-failed"),
+    LOCAL_FOLDER_DOWNLOAD_FAILED(14211, "error-code.local-folder-download-failed"),
+    LOCAL_FOLDER_INFO_GET_FAILED(14212, "error-code.local-folder-info-get-failed"),
+
+    // Session/Cleanup Related
+    SESSION_NOT_EXISTS(14301, "error-code.session-not-exists"),
+    FILE_CLEANUP_FAILED(14302, "error-code.file-cleanup-failed"),
+    STORAGE_DIRECTORY_INIT_FAILED(14303, "error-code.storage-directory-init-failed"),
+
+    // Storage Config Related
+    STORAGE_CONFIG_EMPTY(14401, "error-code.storage-config-empty"),
+    STORAGE_SERVICE_NOT_ENABLED(14402, "error-code.storage-service-not-enabled"),
+    STORAGE_TYPE_NOT_SUPPORTED(14403, "error-code.storage-type-not-supported"),
+    STORAGE_SERVICE_ALREADY_EXISTS(14404, "error-code.storage-service-already-exists"),
+    STORAGE_SERVICE_EMPTY(14405, "error-code.storage-service-empty"),
+    PRIMARY_STORAGE_NOT_SET(14406, "error-code.primary-storage-not-set"),
+    UPLOAD_SESSION_NOT_EXISTS(14407, "error-code.upload-session-not-exists"),
+
+    // File Related
+    FILE_NOT_EXISTS(14501, "error-code.file-not-exists"),
+    INVALID_ACCESS_CODE(14502, "error-code.invalid-access-code"),
+    NO_FILE_FOUND_FOR_ACCESS_CODE(14503, "error-code.no-file-found-for-access-code"),
+    FOLDER_NOT_FOUND_FOR_ACCESS_CODE(14504, "error-code.folder-not-found-for-access-code"),
+    NOT_A_FOLDER_UPLOAD(14505, "error-code.not-a-folder-upload"),
+    INVALID_CHUNK_FILENAME_FORMAT(14506, "error-code.invalid-chunk-filename-format"),
+    CHUNK_COUNT_MISMATCH(14507, "error-code.chunk-count-mismatch"),
+    FILE_SIZE_MISMATCH(14508, "error-code.file-size-mismatch"),
+
+    // WebDAV Related
+    WEBDAV_NOT_IMPLEMENTED(14601, "error-code.webdav-not-implemented"),
+
+    // Operation Not Supported
+    OPERATION_NOT_SUPPORTED(14701, "error-code.operation-not-supported"),
+    FILE_PATH_EMPTY(14702, "error-code.file-path-empty"),
+    FILE_PATH_TOO_LONG(14703, "error-code.file-path-too-long"),
+    FOLDER_PATH_EMPTY(14704, "error-code.folder-path-empty"),
+    FOLDER_PATH_TOO_LONG(14705, "error-code.folder-path-too-long"),
+    UNKNOWN_STORAGE_TYPE(14706, "error-code.unknown-storage-type"),
+
+    // Model Validation Related
+    UPLOAD_SESSION_ID_EMPTY(14801, "error-code.upload-session-id-empty"),
+    CHUNK_NUMBER_INVALID(14802, "error-code.chunk-number-invalid"),
+    TOTAL_CHUNKS_MUST_POSITIVE(14803, "error-code.total-chunks-must-positive"),
+    CHUNK_NUMBER_EXCEEDS_TOTAL(14804, "error-code.chunk-number-exceeds-total"),
+    CHUNK_SIZE_MUST_POSITIVE(14805, "error-code.chunk-size-must-positive"),
+    FILE_NAME_EMPTY(14806, "error-code.file-name-empty"),
+    CHUNK_FILE_EMPTY(14807, "error-code.chunk-file-empty"),
+    RELATIVE_PATH_EMPTY(14808, "error-code.relative-path-empty"),
+    FOLDER_NAME_EMPTY(14809, "error-code.folder-name-empty"),
+    TOTAL_FILES_MUST_POSITIVE(14810, "error-code.total-files-must-positive"),
+    TOTAL_SIZE_MUST_POSITIVE(14811, "error-code.total-size-must-positive"),
+    EXPIRE_TIME_TOO_SHORT(14812, "error-code.expire-time-too-short"),
+
+    // Locale Change Not Allowed
+    LOCALE_CHANGE_NOT_ALLOWED(14901, "error-code.locale-change-not-allowed");
 
 
     private final Integer code;
