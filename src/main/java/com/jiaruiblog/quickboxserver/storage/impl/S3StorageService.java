@@ -1073,65 +1073,6 @@ public class S3StorageService extends AbstractStorageService {
         }
     }
 
-    private String mergeFileChunksInternal(String sessionId, String targetKey) {
-        S3UploadSession session = getUploadSession(sessionId);
-
-        // 创建多部分上传
-        CreateMultipartUploadRequest createRequest = CreateMultipartUploadRequest.builder()
-            .bucket(bucketName)
-            .key(targetKey)
-            .build();
-
-        CreateMultipartUploadResponse createResponse = s3Client.createMultipartUpload(createRequest);
-        String uploadId = createResponse.uploadId();
-
-        // 上传所有分片
-        List<CompletedPart> completedParts = new ArrayList<>();
-        for (String chunkNumber : session.getUploadedChunks()) {
-            String chunkKey = buildChunkKey(session.getObjectKey(), Integer.parseInt(chunkNumber));
-
-            UploadPartCopyRequest copyRequest = UploadPartCopyRequest.builder()
-                .sourceBucket(bucketName)
-                .sourceKey(chunkKey)
-                .destinationBucket(bucketName)
-                .destinationKey(targetKey)
-                .uploadId(uploadId)
-                .partNumber(Integer.parseInt(chunkNumber) + 1)
-                .build();
-
-            UploadPartCopyResponse copyResponse = s3Client.uploadPartCopy(copyRequest);
-
-            CompletedPart part = CompletedPart.builder()
-                .partNumber(Integer.parseInt(chunkNumber) + 1)
-                .eTag(copyResponse.copyPartResult().eTag())
-                .build();
-
-            completedParts.add(part);
-
-            // 删除临时分片
-            deleteObject(chunkKey);
-        }
-
-        // 完成多部分上传
-        CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder()
-            .bucket(bucketName)
-            .key(targetKey)
-            .uploadId(uploadId)
-            .multipartUpload(CompletedMultipartUpload.builder().parts(completedParts).build())
-            .build();
-
-        s3Client.completeMultipartUpload(completeRequest);
-
-        return targetKey;
-    }
-
-    private void extractZipToFolder(String zipKey, String folderKey) {
-        // TODO: 实现S3上的ZIP解压
-        // 这需要下载ZIP文件，解压，然后上传每个文件到S3
-        // 由于S3不支持直接解压，这里需要实现流式解压和上传
-        log.warn("S3 ZIP解压功能暂未实现: {} -> {}", zipKey, folderKey);
-    }
-
     // ==================== 内部类 ====================
 
     @lombok.Data

@@ -169,12 +169,6 @@ public class StorageServiceFactory {
             case WEBDAV:
                 // TODO: 实现WebDAV存储服务
                 throw new UnsupportedOperationException("WebDAV存储服务暂未实现");
-            case NAS:
-                // TODO: 实现NAS存储服务
-                throw new UnsupportedOperationException("NAS存储服务暂未实现");
-            case GPFS:
-                // TODO: 实现GPFS存储服务
-                throw new UnsupportedOperationException("GPFS存储服务暂未实现");
             default:
                 throw new IllegalArgumentException("不支持的存储类型: " + type);
         }

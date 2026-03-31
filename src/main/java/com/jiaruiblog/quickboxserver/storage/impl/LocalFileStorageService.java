@@ -89,7 +89,7 @@ public class LocalFileStorageService extends AbstractStorageService {
         String sessionId = (fileId != null && !fileId.isEmpty()) ? fileId : UUID.randomUUID().toString();
         Path sessionDir = chunkPath.resolve(sessionId);
 
-        log.info("session dir: {}", sessionDir);
+        log.debug("session dir: {}", sessionDir);
 
         try {
             Files.createDirectories(sessionDir);
@@ -132,8 +132,8 @@ public class LocalFileStorageService extends AbstractStorageService {
 
         UploadSession session = uploadSessions.get(sessionId);
         Path chunkFile = chunkPath.resolve(sessionId).resolve(String.valueOf(chunkNumber));
-        log.info("上传的时候chunkPath是：{}", chunkPath);
-        log.info("分片的上传路径是：{}", chunkFile.toAbsolutePath().toString());
+        log.debug("上传的时候chunkPath是：{}", chunkPath);
+        log.debug("分片的上传路径是：{}", chunkFile.toAbsolutePath().toString());
         try {
             // 使用文件锁确保并发安全
             ReentrantLock lock = fileLocks.computeIfAbsent(sessionId, k -> new ReentrantLock());
@@ -142,7 +142,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             try {
                 // 检查分片是否已上传
                 if (session.getUploadedChunks().contains(String.valueOf(chunkNumber))) {
-                    log.info("当前正在传的分片已上传: {} - {}", sessionId, chunkNumber);
+                    log.debug("当前正在传的分片已上传: {} - {}", sessionId, chunkNumber);
                     return;
                 }
 

@@ -10,9 +10,7 @@ public enum StorageType {
     LOCAL("local", "本地文件系统"),
     S3("s3", "S3对象存储"),
     MINIO("minio", "MinIO对象存储"),
-    WEBDAV("webdav", "WebDAV存储"),
-    NAS("nas", "NAS存储"),
-    GPFS("gpfs", "GPFS存储");
+    WEBDAV("webdav", "WebDAV存储");
 
     private final String code;
     private final String description;

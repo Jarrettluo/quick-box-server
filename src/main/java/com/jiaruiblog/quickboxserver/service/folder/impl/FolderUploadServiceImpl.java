@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.security.SecureRandom;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -115,8 +115,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
 
     @Override
     public FolderUploadResponse uploadFolderChunk(FolderChunkUploadRequest request) {
-        log.info("上传文件夹分片: {} - {}", request.getSessionId(), request.getChunkNumber());
-        log.info("当前分片上传的request内容是：{}", request);
+        log.debug("上传文件夹分片: {} - {}", request.getSessionId(), request.getChunkNumber());
         try {
             // 获取上传会话
             FolderUploadSession session = getSession(request.getSessionId());
@@ -130,7 +129,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
                 session.getStatus() != FolderUploadResponse.UploadStatus.MERGING) {
                 throw new BusinessException(ErrorCode.SESSION_INVALID_STATE);
             }
-            log.info("获取的 session 信息是：{}", session);
+            log.debug("获取的 session 信息是：{}", session);
 
             // 获取存储服务
             StorageService storageService = storageServiceFactory.getStorageService(session.getStorageBackend());
@@ -412,7 +411,7 @@ public class FolderUploadServiceImpl implements FolderUploadService {
     public String generateAccessCode() {
         // 生成6位大写字母随机码
         String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        Random random = new Random();
+        SecureRandom random = new SecureRandom();
         StringBuilder code = new StringBuilder(6);
 
         for (int i = 0; i < 6; i++) {

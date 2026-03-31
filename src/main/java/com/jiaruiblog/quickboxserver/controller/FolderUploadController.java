@@ -36,10 +36,6 @@ public class FolderUploadController {
 
     private FolderUploadService folderUploadService;
 
-    // STEP1: 初始化文件夹的metadata.json信息；存下来每一个要传递文件的id和code；存储整个文件夹的结构， 后面的每个文件就关联上了。
-
-
-    // STEP2: 传递每一个单独的文件，先初始化，正常传递
     @Operation(summary = "初始化文件夹上传", description = "创建文件夹上传会话")
     @PostMapping("/init")
     public ApiResult<FolderUploadResponse> initFolderUpload(
@@ -68,7 +64,6 @@ public class FolderUploadController {
         }
     }
 
-    // STEP3: 每个单独的文件进行分片上传，分片的大小由前端决定
     @Operation(summary = "上传文件夹分片", description = "上传文件夹分片文件")
     @PostMapping(value = "/chunk", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResult<FolderUploadResponse> uploadFolderChunk(
@@ -140,7 +135,6 @@ public class FolderUploadController {
         }
     }
 
-    // STEP4: 合并每一个独立的文件
     @Operation(summary = "合并文件夹分片", description = "合并所有分片并完成上传")
     @PostMapping("/merge")
     public ApiResult<FolderUploadResponse> mergeFolderChunks(
@@ -190,7 +184,6 @@ public class FolderUploadController {
         }
     }
 
-    // STEP5: 根据第一步取到的信息获取文件夹的详情
     @Operation(summary = "验证取件码", description = "验证取件码是否有效")
     @GetMapping("/validate/{accessCode}")
     public ApiResult<Boolean> validateAccessCode(
@@ -206,7 +199,6 @@ public class FolderUploadController {
         }
     }
 
-    // STEP6: 将文件夹进行合并成zip后下载
     @Operation(summary = "下载文件夹", description = "下载文件夹为ZIP压缩包")
     @GetMapping("/download/{accessCode}")
     public ResponseEntity<InputStreamResource> downloadFolder(
@@ -313,23 +305,5 @@ public class FolderUploadController {
 
         url.append(contextPath);
         return url.toString();
-    }
-
-    /**
-     * 处理文件上传异常
-     */
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ApiResult<Void> handleIllegalArgumentException(IllegalArgumentException e) {
-        log.error("参数错误", e);
-        return ApiResult.error(400, e.getMessage());
-    }
-
-    /**
-     * 处理业务异常
-     */
-    @ExceptionHandler(Exception.class)
-    public ApiResult<Void> handleException(Exception e) {
-        log.error("服务器错误", e);
-        return ApiResult.error(500, "服务器内部错误: " + e.getMessage());
     }
 }

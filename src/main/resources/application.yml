@@ -39,7 +39,7 @@ file:
 # type: local 或 s3
 # ============================================================
 storage:
-  type: s3                          # 存储类型：local（本地）或 s3
+  type: local                          # 存储类型：local（本地）或 s3
   # 本地存储配置（当 type=local 时生效）
   local:
     base-path: ./uploads           # 基础存储路径
