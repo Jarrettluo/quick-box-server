@@ -1,6 +1,7 @@
 package com.jiaruiblog.quickboxserver.storage;
 
 import com.jiaruiblog.quickboxserver.storage.impl.LocalFileStorageService;
+import com.jiaruiblog.quickboxserver.storage.impl.S3StorageService;
 import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
 import com.jiaruiblog.quickboxserver.storage.model.StorageType;
 import lombok.extern.slf4j.Slf4j;
@@ -94,8 +95,8 @@ public class StorageServiceFactory {
                 break;
             case S3:
             case MINIO:
-                // TODO: 实现S3/MinIO存储服务
-                throw new UnsupportedOperationException("S3/MinIO存储服务暂未实现");
+                storageService = new S3StorageService(config);
+                break;
             case WEBDAV:
                 // TODO: 实现WebDAV存储服务
                 throw new UnsupportedOperationException("WebDAV存储服务暂未实现");

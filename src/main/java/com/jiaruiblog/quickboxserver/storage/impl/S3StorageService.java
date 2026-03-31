@@ -418,7 +418,17 @@ public class S3StorageService extends AbstractStorageService {
 
     @Override
     public boolean folderChunkExists(String sessionId, int chunkNumber, String relativePath, String filename) {
-        return false;
+        try {
+            S3UploadSession session = getUploadSession(sessionId);
+            String encodedFileName = encodeChunkFileName(relativePath, filename, chunkNumber);
+            String chunkKey = buildFolderChunkKey(session.getObjectKey(), encodedFileName);
+            boolean exists = objectExists(chunkKey);
+            log.debug("检查S3文件夹分片是否存在: {} - {} -> {}", sessionId, encodedFileName, exists);
+            return exists;
+        } catch (Exception e) {
+            log.error("检查S3文件夹分片是否存在失败", e);
+            return false;
+        }
     }
 
     /**
@@ -528,9 +538,36 @@ public class S3StorageService extends AbstractStorageService {
                 String filename = decoded[1];
 
                 // 构建目标路径
+                // objectKey 格式: {prefix}/folders/{folderId}/{folderName}/
+                // relativePath 可能是 "folderName/subdir/file.txt" 或 "subdir/file.txt"
                 String targetKey = session.getObjectKey();
                 if (relativePath != null && !relativePath.isEmpty()) {
-                    targetKey = targetKey + relativePath.replace("/", "_") + "_";
+                    // 去掉文件名得到目录部分
+                    String relativePathDir = relativePath;
+                    if (relativePath.endsWith(filename)) {
+                        relativePathDir = relativePath.substring(0, relativePath.length() - filename.length());
+                    }
+                    // 去掉末尾的 "/"
+                    if (relativePathDir.endsWith("/")) {
+                        relativePathDir = relativePathDir.substring(0, relativePathDir.length() - 1);
+                    }
+
+                    if (!relativePathDir.isEmpty()) {
+                        // 检查 relativePathDir 是否等于 folderName
+                        if (relativePathDir.equals(session.getFolderName())) {
+                            // relativePathDir 就是 folderName，文件直接在 finalFolder 下
+                            targetKey = session.getObjectKey();
+                        } else if (relativePathDir.startsWith(session.getFolderName() + "/")) {
+                            // relativePath 包含 folderName 作为前缀，去掉它得到子目录
+                            String subPath = relativePathDir.substring(session.getFolderName().length() + 1);
+                            if (!subPath.isEmpty()) {
+                                targetKey = session.getObjectKey() + subPath + "/";
+                            }
+                        } else {
+                            // relativePath 不包含 folderName，relativePath 本身就是子目录
+                            targetKey = session.getObjectKey() + relativePathDir + "/";
+                        }
+                    }
                 }
                 targetKey = targetKey + filename;
 
