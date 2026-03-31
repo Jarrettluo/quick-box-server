@@ -6,9 +6,7 @@ import com.jiaruiblog.quickboxserver.model.request.ChunkUploadRequest;
 import com.jiaruiblog.quickboxserver.model.response.UploadProgress;
 import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import com.jiaruiblog.quickboxserver.service.FileUploadService;
-import com.jiaruiblog.quickboxserver.storage.StorageService;
 import com.jiaruiblog.quickboxserver.storage.StorageServiceFactory;
-import com.jiaruiblog.quickboxserver.storage.model.StorageType;
 import com.jiaruiblog.quickboxserver.storage.impl.S3StorageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -17,7 +15,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
-
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
@@ -29,9 +26,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Map;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/upload")
@@ -101,7 +98,7 @@ public class FileUploadController {
     })
     @GetMapping("/download/{accessCode}")
     public ResponseEntity<org.springframework.core.io.Resource> downloadFile(
-            @Parameter(description = "取件码") @PathVariable String accessCode) throws IOException {
+            @Parameter(description = "取件码") @PathVariable String accessCode) {
         File file = uploadService.getFileByAccessCode(accessCode);
 
         if (file != null) {

@@ -19,9 +19,4 @@ public record ChunkUploadRequest(
         // 文件类型
         String contentType
 ) {
-    // 可以添加便捷方法
-    public boolean isLastChunk() {
-        return chunkNumber != null && totalChunks != null
-                && chunkNumber.equals(totalChunks);
-    }
 }
