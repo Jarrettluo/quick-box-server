@@ -96,6 +96,13 @@ public interface StorageService {
      */
     boolean fileExists(String filePath);
 
+    /**
+     * 获取文件上传会话信息
+     * @param sessionId 上传会话ID（即 accessCode）
+     * @return 会话信息，包含已上传分片列表、文件名、文件大小等
+     */
+    Map<String, Object> getSessionInfo(String sessionId);
+
     // ==================== 文件夹操作 ====================
 
     /**

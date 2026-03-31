@@ -146,7 +146,7 @@ public class S3StorageService extends AbstractStorageService {
     public String initFileUpload(String fileId, String fileName, long fileSize, Map<String, Object> metadata) {
         validateFilePath(fileId);
 
-        String sessionId = UUID.randomUUID().toString();
+        String sessionId = (fileId != null && !fileId.isEmpty()) ? fileId : UUID.randomUUID().toString();
         String objectKey = buildObjectKey("files", fileId, fileName);
 
         S3UploadSession session = new S3UploadSession();
@@ -278,6 +278,24 @@ public class S3StorageService extends AbstractStorageService {
         }
     }
 
+    /**
+     * 获取 S3 对象的元数据（用于获取 Content-Length 等）
+     * @param objectKey S3 对象键
+     * @return S3 对象元数据
+     */
+    public HeadObjectResponse getObjectMetadata(String objectKey) {
+        try {
+            HeadObjectRequest request = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(objectKey)
+                    .build();
+            return s3Client.headObject(request);
+        } catch (Exception e) {
+            log.error("获取S3对象元数据失败: {}", objectKey, e);
+            throw new RuntimeException("获取S3对象元数据失败", e);
+        }
+    }
+
     @Override
     public void deleteFile(String filePath) {
         validateFilePath(filePath);
@@ -295,6 +313,21 @@ public class S3StorageService extends AbstractStorageService {
             log.error("删除S3文件失败", e);
             throw new RuntimeException("删除S3文件失败", e);
         }
+    }
+
+    @Override
+    public Map<String, Object> getSessionInfo(String sessionId) {
+        S3UploadSession session = uploadSessions.get(sessionId);
+        if (session == null) {
+            return null;
+        }
+        Map<String, Object> info = new HashMap<>();
+        info.put("uploadedChunks", session.uploadedChunks);
+        info.put("fileName", session.fileName);
+        info.put("fileSize", session.fileSize);
+        info.put("uploadedSize", session.uploadedSize);
+        info.put("objectKey", session.objectKey);
+        return info;
     }
 
     @Override

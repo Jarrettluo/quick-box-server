@@ -39,7 +39,7 @@ file:
 # type: local 或 s3
 # ============================================================
 storage:
-  type: local                       # 存储类型：local（本地）或 s3
+  type: s3                          # 存储类型：local（本地）或 s3
   # 本地存储配置（当 type=local 时生效）
   local:
     base-path: ./uploads           # 基础存储路径
@@ -50,12 +50,12 @@ storage:
     temp-file-prefix: quickbox_     # 临时文件前缀
   # S3 存储配置（当 type=s3 时生效）
   s3:
-    enabled: false                  # 是否启用 S3
-    endpoint: http://localhost:9000 # S3 端点
+    enabled: true                   # 是否启用 S3
+    endpoint: http://192.168.1.29:9000 # S3 端点
     region: us-east-1
-    access-key: ""
-    secret-key: ""
-    bucket-name: quickbox-files
+    access-key: rag_flow
+    secret-key: infini_rag_flow
+    bucket-name: quick-box
     path-style-access: true
     use-ssl: false
     prefix: uploads

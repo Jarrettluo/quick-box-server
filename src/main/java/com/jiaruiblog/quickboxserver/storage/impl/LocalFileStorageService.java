@@ -86,7 +86,7 @@ public class LocalFileStorageService extends AbstractStorageService {
     public String initFileUpload(String fileId, String fileName, long fileSize, Map<String, Object> metadata) {
         validateFilePath(fileId);
 
-        String sessionId = UUID.randomUUID().toString();
+        String sessionId = (fileId != null && !fileId.isEmpty()) ? fileId : UUID.randomUUID().toString();
         Path sessionDir = chunkPath.resolve(sessionId);
 
         log.info("session dir: {}", sessionDir);
@@ -323,6 +323,21 @@ public class LocalFileStorageService extends AbstractStorageService {
             log.error("删除文件失败", e);
             throw new RuntimeException("删除文件失败", e);
         }
+    }
+
+    @Override
+    public Map<String, Object> getSessionInfo(String sessionId) {
+        UploadSession session = uploadSessions.get(sessionId);
+        if (session == null) {
+            return null;
+        }
+        Map<String, Object> info = new HashMap<>();
+        info.put("uploadedChunks", session.getUploadedChunks());
+        info.put("fileName", session.getFileName());
+        info.put("fileSize", session.getFileSize());
+        info.put("chunkCount", session.getChunkCount());
+        info.put("uploadedSize", session.getUploadedSize());
+        return info;
     }
 
     @Override

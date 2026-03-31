@@ -10,6 +10,10 @@ import com.jiaruiblog.quickboxserver.model.response.UploadProgress;
 import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import com.jiaruiblog.quickboxserver.service.FileUploadService;
 import com.jiaruiblog.quickboxserver.service.folder.FolderUploadService;
+import com.jiaruiblog.quickboxserver.storage.StorageService;
+import com.jiaruiblog.quickboxserver.storage.StorageServiceFactory;
+import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
+import com.jiaruiblog.quickboxserver.storage.model.StorageType;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.io.InputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -34,6 +39,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -43,6 +49,7 @@ public class FileUploadServiceImpl implements FileUploadService {
 
     private static final String REDIS_KEY_PREFIX = "upload:access:";
     private static final String REDIS_FOLDER_KEY_PREFIX = "folder:";
+    private static final String REDIS_FILE_METADATA_PREFIX = "file:metadata:";
 
     @Resource
     private RedisTemplate<String, String> redisTemplate;
@@ -55,12 +62,62 @@ public class FileUploadServiceImpl implements FileUploadService {
     @Resource
     private FolderUploadService folderUploadService;
 
+    @Resource
+    private StorageServiceFactory storageServiceFactory;
+
     @Override
     public UploadSession initUploadSession(ChunkUploadRequest chunkUploadRequest) {
         // 1. Generate unique uploadId
         String accessCode = generateRandomCode(6);
 
-        // 2. Store access code in Redis with expiration
+        // 2. Use StorageService to initialize upload session first
+        StorageService storageService = storageServiceFactory.getPrimaryStorageService();
+
+        Map<String, Object> metadata = new java.util.HashMap<>();
+        metadata.put("filename", chunkUploadRequest.filename());
+        metadata.put("totalSize", chunkUploadRequest.totalSize());
+        metadata.put("totalChunks", chunkUploadRequest.totalChunks());
+        metadata.put("uploadTime", Instant.now().toString());
+
+        // 关键：传入 accessCode 作为 fileId，StorageService 会使用它作为 sessionId
+        storageService.initFileUpload(
+                accessCode,
+                chunkUploadRequest.filename(),
+                chunkUploadRequest.totalSize(),
+                metadata
+        );
+
+        // 3. Store access code and metadata in Redis with expiration
+        // Store metadata for download (including filename and objectKey for S3)
+        Map<String, Object> fileMetadata = new java.util.HashMap<>();
+        fileMetadata.put("filename", chunkUploadRequest.filename());
+        fileMetadata.put("fileSize", chunkUploadRequest.totalSize());
+        fileMetadata.put("storageType", storageService.getStorageType().name());
+
+        // For S3, construct and store the full objectKey
+        if (storageService.getStorageType() == StorageType.S3) {
+            StorageConfig config = storageService.getConfig();
+            String prefix = "";
+            if (config != null && config.getS3Config() != null) {
+                prefix = config.getS3Config().getPrefix() != null ? config.getS3Config().getPrefix() : "";
+            }
+            String objectKey = prefix.isEmpty() ? "" : prefix + "/";
+            objectKey += "files/" + accessCode + "/" + chunkUploadRequest.filename();
+            fileMetadata.put("objectKey", objectKey);
+        }
+
+        try {
+            String metadataJson = objectMapper.writeValueAsString(fileMetadata);
+            redisTemplate.opsForValue().set(
+                    REDIS_FILE_METADATA_PREFIX + accessCode,
+                    metadataJson,
+                    fileStorageConfig.getDownloadExpirationDays(),
+                    TimeUnit.DAYS
+            );
+        } catch (Exception e) {
+            log.error("Failed to store file metadata in Redis", e);
+        }
+
         redisTemplate.opsForValue().set(
                 REDIS_KEY_PREFIX + accessCode,
                 "active",
@@ -68,45 +125,14 @@ public class FileUploadServiceImpl implements FileUploadService {
                 TimeUnit.DAYS
         );
 
-        // 3. Create chunk directory
-        String chunkPath = fileStorageConfig.getChunkPathWithAccessCode(accessCode);
-        File chunkDir = new File(chunkPath);
-        if (!chunkDir.exists()) {
-            boolean mkdir = chunkDir.mkdirs();
-            if (!mkdir) {
-                log.error("Failed to create chunk directory: {}", chunkPath);
-                throw new BusinessException(ErrorCode.OPERATE_FAILED);
-            }
-        }
-
-        // 4. Persist file metadata to chunk directory
-        String filename = chunkUploadRequest.filename();
-        Long totalSize = chunkUploadRequest.totalSize();
-        Integer totalChunks = chunkUploadRequest.totalChunks();
-
-        try {
-            ObjectMapper objectMapper = new ObjectMapper();
-            java.util.Map<String, Object> metadata = new java.util.HashMap<>();
-            metadata.put("filename", filename);
-            metadata.put("totalSize", totalSize);
-            metadata.put("totalChunks", totalChunks);
-            metadata.put("uploadTime", Instant.now().toString());
-
-            File metadataFile = new File(chunkPath, "metadata.json");
-            objectMapper.writeValue(metadataFile, metadata);
-        } catch (java.io.IOException e) {
-            log.error("Failed to persist file metadata: {}", e.getMessage());
-            throw new BusinessException(ErrorCode.OPERATE_FAILED);
-        }
-
-        // 5. Set expiration
+        // 4. Set expiration
         LocalDateTime expires = LocalDateTime.now().plusHours(fileStorageConfig.getSessionExpirationHours());
 
-        // 返回绝对路径，确保前端和后端路径一致性
-        String absoluteChunkPath = new File(chunkPath).getAbsolutePath();
+        // 获取存储路径（用于返回给前端）
+        String chunkPath = fileStorageConfig.getChunkPathWithAccessCode(accessCode);
         return new UploadSession(
                 accessCode,
-                absoluteChunkPath,
+                chunkPath,
                 expires
         );
     }
@@ -119,30 +145,17 @@ public class FileUploadServiceImpl implements FileUploadService {
                 throw new BusinessException(ErrorCode.PARAMS_ERROR);
             }
 
-            // 2. Save chunk to target location
-            String chunkPath = fileStorageConfig.getChunkPathWithAccessCode(request.uploadId());
-            File chunkDir = new File(chunkPath);
+            // 2. Use StorageService to upload chunk
+            StorageService storageService = storageServiceFactory.getPrimaryStorageService();
 
-            // 确保目录存在
-            if (!chunkDir.exists()) {
-                boolean mkdirs = chunkDir.mkdirs();
-                if (!mkdirs) {
-                    log.error("Failed to create chunk directory: {}", chunkPath);
-                    throw new BusinessException(ErrorCode.OPERATE_FAILED);
-                }
+            try (InputStream chunkData = file.getInputStream()) {
+                storageService.uploadFileChunk(
+                        request.uploadId(),
+                        request.chunkNumber(),
+                        chunkData,
+                        file.getSize()
+                );
             }
-
-            File chunkFile = new File(chunkDir, request.chunkNumber().toString());
-
-            // 使用绝对路径确保文件保存到正确位置
-            log.debug("Saving chunk file to absolute path: {}", chunkFile.getAbsolutePath());
-
-            // 确保父目录存在
-            if (!chunkFile.getParentFile().exists()) {
-                chunkFile.getParentFile().mkdirs();
-            }
-
-            file.transferTo(chunkFile);
 
             // 3. Get updated progress
             return getUploadProgress(request.uploadId(), request.chunkNumber());
@@ -154,26 +167,42 @@ public class FileUploadServiceImpl implements FileUploadService {
     }
 
     public UploadProgress getUploadProgress(String accessCode, Integer chunkNumber) {
-        // 1. Get chunk directory
-        String chunkPath = fileStorageConfig.getChunkPathWithAccessCode(accessCode);
-        File chunkDir = new File(chunkPath);
+        // 1. Get StorageService
+        StorageService storageService = storageServiceFactory.getPrimaryStorageService();
+        Map<String, Object> sessionInfo = storageService.getSessionInfo(accessCode);
 
-        // 2. List all uploaded chunks
-        File[] chunkFiles = chunkDir.listFiles();
-        List<Integer> uploadedChunks = Arrays.stream(chunkFiles != null ? chunkFiles : new File[0])
-                .filter(f -> !f.getName().equals("metadata.json"))
-                .map(f -> {
-                    try {
-                        return Integer.parseInt(f.getName());
-                    } catch (NumberFormatException e) {
-                        return -1;
-                    }
-                })
-                .filter(num -> num > 0)
-                .sorted()
-                .collect(Collectors.toList());
+        List<Integer> uploadedChunks;
+        String chunkPath;
 
-        // 3. Build progress response
+        if (sessionInfo != null) {
+            // 从 StorageService 获取进度
+            @SuppressWarnings("unchecked")
+            Set<String> chunks = (Set<String>) sessionInfo.get("uploadedChunks");
+            uploadedChunks = chunks.stream()
+                    .map(Integer::parseInt)
+                    .sorted()
+                    .collect(Collectors.toList());
+            chunkPath = fileStorageConfig.getChunkPathWithAccessCode(accessCode);
+        } else {
+            // 兼容旧逻辑：尝试从本地目录读取
+            chunkPath = fileStorageConfig.getChunkPathWithAccessCode(accessCode);
+            File chunkDir = new File(chunkPath);
+            File[] chunkFiles = chunkDir.listFiles();
+            uploadedChunks = Arrays.stream(chunkFiles != null ? chunkFiles : new File[0])
+                    .filter(f -> !f.getName().equals("metadata.json"))
+                    .map(f -> {
+                        try {
+                            return Integer.parseInt(f.getName());
+                        } catch (NumberFormatException e) {
+                            return -1;
+                        }
+                    })
+                    .filter(num -> num > 0)
+                    .sorted()
+                    .collect(Collectors.toList());
+        }
+
+        // 2. Build progress response
         return new UploadProgress(
                 accessCode,
                 uploadedChunks.size(),
@@ -188,85 +217,17 @@ public class FileUploadServiceImpl implements FileUploadService {
     @Override
     @Transactional
     public String mergeChunks(String identifier) {
-        System.out.println(identifier + "=================");
-        // 1. Prepare paths
-        String chunkDirPath = fileStorageConfig.getChunkPathWithAccessCode(identifier);
-        String finalDirPath = fileStorageConfig.getFinalPathWithAccessCode(identifier);
-        System.out.println(chunkDirPath);
-        System.out.println(finalDirPath);
-        // Check if directory already exists
-        File finalDir = new File(finalDirPath);
-        if (!finalDir.exists()) {
-            boolean mkdir = finalDir.mkdirs();
-            System.out.println(mkdir + "结果" );
-            if (!mkdir) {
-                // Add more detailed error information
-                throw new BusinessException(ErrorCode.OPERATE_FAILED,
-                        "Failed to create directory: " + finalDirPath);
-            }
-        } else {
-            System.out.println("Directory already exists: " + finalDirPath);
-        }
+        log.info("mergeChunks called with identifier: {}", identifier);
 
-        // 2. Read metadata
-        String filename;
-        long totalSize;
-        int totalChunks;
-        File metadataFile = new File(chunkDirPath, "metadata.json");
-        try {
-            System.out.println(metadataFile);
-            ObjectMapper objectMapper = new ObjectMapper();
-            Map<String, String> metadata = objectMapper.readValue(metadataFile, Map.class);
-            filename = metadata.get("filename");
-            totalSize = Long.parseLong(String.valueOf(metadata.getOrDefault("totalSize", "0")));
-            totalChunks = Integer.parseInt(String.valueOf(metadata.getOrDefault("totalChunks", "0")));
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
-        }
+        // 使用 StorageService 合并分片
+        StorageService storageService = storageServiceFactory.getPrimaryStorageService();
 
-        // 3. Get all chunks
-        File[] chunkFiles = new File(chunkDirPath).listFiles((dir, name) -> !name.equals("metadata.json"));
-        if (chunkFiles == null || chunkFiles.length == 0) {
-            throw new IllegalStateException("No chunks found");
-        }
+        // S3StorageService.mergeFileChunks() 会处理 S3 多部分上传
+        // LocalFileStorageService.mergeFileChunks() 会处理本地文件合并
+        String filePath = storageService.mergeFileChunks(identifier);
 
-        // 4. Validate chunk count
-        if (chunkFiles.length != totalChunks) {
-            throw new IllegalStateException("Chunk count mismatch. Expected: "
-                    + totalChunks + ", Actual: " + chunkFiles.length);
-        }
-
-        // 5. Sort chunks numerically
-        Arrays.sort(chunkFiles, Comparator.comparingInt(f -> Integer.parseInt(f.getName())));
-
-        // 6. Merge files and calculate total size
-        File outputFile = new File(finalDirPath, filename);
-        long mergedSize = 0;
-        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-            for (File chunk : chunkFiles) {
-                long chunkSize = Files.copy(chunk.toPath(), fos);
-                mergedSize += chunkSize;
-            }
-        } catch (IOException e) {
-            throw new BusinessException(ErrorCode.OPERATE_FAILED);
-        }
-
-        // 7. Validate total size
-        if (mergedSize != totalSize) {
-            boolean delete = outputFile.delete();
-            if (!delete) {
-                log.error("chunk files are remove failed!");
-            }
-            throw new IllegalStateException("File size mismatch. Expected: " + totalSize + ", Actual: " + mergedSize);
-        }
-        try {
-            // 8. Cleanup chunks
-            FileUtils.deleteDirectory(new File(chunkDirPath));
-            return identifier;
-        } catch (IOException e) {
-            throw new RuntimeException("Merge failed: " + e.getMessage(), e);
-        }
+        log.info("mergeChunks completed for: {}", identifier);
+        return identifier;
     }
 
     @Override
@@ -329,24 +290,38 @@ public class FileUploadServiceImpl implements FileUploadService {
             throw new IllegalArgumentException("Invalid or expired access code");
         }
 
-        File uploadDir = new File(fileStorageConfig.getFinalPathWithAccessCode(accessCode));
-        if (!uploadDir.exists()) {
-            throw new IllegalArgumentException("Invalid access code");
-        }
+        // 获取存储服务类型
+        StorageService storageService = storageServiceFactory.getPrimaryStorageService();
 
-        File[] files = uploadDir.listFiles();
-        if (files == null || files.length == 0) {
-            throw new IllegalArgumentException("No file found for this access code");
-        }
+        if (storageService.getStorageType() == StorageType.S3) {
+            // S3 场景：返回 null，Controller 层会使用 S3StorageService.downloadFile()
+            return null;
+        } else {
+            // Local 场景：保持原有逻辑
+            File uploadDir = new File(fileStorageConfig.getFinalPathWithAccessCode(accessCode));
+            if (!uploadDir.exists()) {
+                throw new IllegalArgumentException("Invalid access code");
+            }
 
-        return files[0];
+            File[] files = uploadDir.listFiles();
+            if (files == null || files.length == 0) {
+                throw new IllegalArgumentException("No file found for this access code");
+            }
+
+            return files[0];
+        }
     }
 
     @Override
     public FileInfo getFileInfo(String accessCode) {
         File file = getFileByAccessCode(accessCode);
         String downloadUrl;
-        if (file.isDirectory()) {
+
+        // Check if it's a folder access code first
+        String folderKey = REDIS_FOLDER_KEY_PREFIX + accessCode;
+        String folderJson = (String) redisTemplate.opsForValue().get(folderKey);
+
+        if (folderJson != null || (file != null && file.isDirectory())) {
             // Folder case - get detailed folder info from FolderUploadService
             downloadUrl = "/api/upload/folder/download/" + accessCode;
             com.jiaruiblog.quickboxserver.model.folder.FolderInfoResponse folderInfo =
@@ -381,8 +356,8 @@ public class FileUploadServiceImpl implements FileUploadService {
             }
 
             return result;
-        } else {
-            // Regular file case
+        } else if (file != null) {
+            // Local file case
             downloadUrl = "/download/" + accessCode + "/" + file.getName();
             FileInfo result = new FileInfo();
             result.setType("file");
@@ -391,7 +366,37 @@ public class FileUploadServiceImpl implements FileUploadService {
             result.setLastModified(file.lastModified());
             result.setDownloadUrl(downloadUrl);
             return result;
+        } else {
+            // S3 file case - get info from Redis metadata
+            Map<String, Object> metadata = getFileMetadata(accessCode);
+
+            if (metadata != null) {
+                downloadUrl = "/download/" + accessCode;
+                FileInfo result = new FileInfo();
+                result.setType("file");
+                result.setFilename(metadata.get("filename") != null ? metadata.get("filename").toString() : accessCode);
+                result.setSize(metadata.get("fileSize") != null ? Long.parseLong(metadata.get("fileSize").toString()) : 0);
+                result.setDownloadUrl(downloadUrl);
+                return result;
+            }
+
+            throw new IllegalArgumentException("File not found for access code: " + accessCode);
         }
+    }
+
+    @Override
+    public Map<String, Object> getFileMetadata(String accessCode) {
+        String metadataKey = REDIS_FILE_METADATA_PREFIX + accessCode;
+        String metadataJson = (String) redisTemplate.opsForValue().get(metadataKey);
+
+        if (metadataJson != null) {
+            try {
+                return objectMapper.readValue(metadataJson, Map.class);
+            } catch (Exception e) {
+                log.warn("Failed to parse file metadata for {}", accessCode, e);
+            }
+        }
+        return null;
     }
 
     public static String generateRandomCode(int length) {

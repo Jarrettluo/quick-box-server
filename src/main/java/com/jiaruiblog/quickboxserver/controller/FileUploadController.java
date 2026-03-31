@@ -6,6 +6,10 @@ import com.jiaruiblog.quickboxserver.model.request.ChunkUploadRequest;
 import com.jiaruiblog.quickboxserver.model.response.UploadProgress;
 import com.jiaruiblog.quickboxserver.model.response.UploadSession;
 import com.jiaruiblog.quickboxserver.service.FileUploadService;
+import com.jiaruiblog.quickboxserver.storage.StorageService;
+import com.jiaruiblog.quickboxserver.storage.StorageServiceFactory;
+import com.jiaruiblog.quickboxserver.storage.model.StorageType;
+import com.jiaruiblog.quickboxserver.storage.impl.S3StorageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -15,6 +19,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +28,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.Map;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
@@ -33,6 +40,9 @@ public class FileUploadController {
 
     @Resource
     private FileUploadService uploadService;
+
+    @Resource
+    private StorageServiceFactory storageServiceFactory;
 
 
     @Operation(summary = "初始化上传", description = "验证用户权限和请求参数，生成唯一uploadId，创建上传记录")
@@ -93,20 +103,58 @@ public class FileUploadController {
     public ResponseEntity<org.springframework.core.io.Resource> downloadFile(
             @Parameter(description = "取件码") @PathVariable String accessCode) throws IOException {
         File file = uploadService.getFileByAccessCode(accessCode);
-        org.springframework.core.io.Resource resource = new FileSystemResource(file);
 
-        String encodedFilename = URLEncoder.encode(file.getName(), StandardCharsets.UTF_8)
-                .replace("+", "%20");
-        String contentDisposition = "attachment; filename=\"" + encodedFilename + "\"; filename*=UTF-8''" + encodedFilename;
+        if (file != null) {
+            // Local 场景：原有逻辑
+            org.springframework.core.io.Resource resource = new FileSystemResource(file);
+            String encodedFilename = URLEncoder.encode(file.getName(), StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+            String contentDisposition = "attachment; filename=\"" + encodedFilename + "\"; filename*=UTF-8''" + encodedFilename;
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
-                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Accept-Ranges, Content-Length, Cache-Control")
-                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                .header(HttpHeaders.CACHE_CONTROL, "no-store, no-cache, must-revalidate")
-                .contentLength(file.length())
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .body(resource);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                    .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Accept-Ranges, Content-Length, Cache-Control")
+                    .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store, no-cache, must-revalidate")
+                    .contentLength(file.length())
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(resource);
+        } else {
+            // S3 场景：从 Redis 获取 objectKey（包含完整路径）
+            Map<String, Object> metadata = uploadService.getFileMetadata(accessCode);
+
+            String filename = accessCode;
+            String objectKey = null;
+
+            if (metadata != null) {
+                filename = (String) metadata.getOrDefault("filename", accessCode);
+                objectKey = (String) metadata.get("objectKey");
+            }
+
+            if (objectKey == null) {
+                throw new IllegalStateException("S3 objectKey not found in metadata for access code: " + accessCode);
+            }
+
+            S3StorageService s3Service = (S3StorageService) storageServiceFactory.getPrimaryStorageService();
+
+            // 获取文件元数据（使用 HEAD 请求获取 Content-Length）
+            long contentLength = s3Service.getObjectMetadata(objectKey).contentLength();
+
+            // 获取文件流
+            InputStream inputStream = s3Service.downloadFile(objectKey);
+
+            String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+            String contentDisposition = "attachment; filename=\"" + encodedFilename + "\"; filename*=UTF-8''" + encodedFilename;
+
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                    .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition")
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store, no-cache, must-revalidate")
+                    .contentLength(contentLength)
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(new InputStreamResource(inputStream));
+        }
     }
 
     @Operation(summary = "下载文件（带文件名）", description = "通过取件码下载文件，文件名仅用于URL兼容性")

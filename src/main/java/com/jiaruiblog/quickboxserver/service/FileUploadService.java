@@ -8,6 +8,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 public interface FileUploadService {
 
@@ -43,4 +44,11 @@ public interface FileUploadService {
     File getFileByAccessCode(String accessCode);
 
     FileInfo getFileInfo(String accessCode);
+
+    /**
+     * 获取文件元数据（用于 S3 下载）
+     * @param accessCode 取件码
+     * @return 文件元数据Map，包含 filename, fileSize, storageType
+     */
+    Map<String, Object> getFileMetadata(String accessCode);
 }
