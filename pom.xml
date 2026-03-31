@@ -90,17 +90,6 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>2.26.17</version>
-            <!-- 排除可能冲突的HTTP客户端 -->
-            <exclusions>
-                <exclusion>
-                    <groupId>software.amazon.awssdk</groupId>
-                    <artifactId>apache-client</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>software.amazon.awssdk</groupId>
-                    <artifactId>netty-client</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
 
         <!-- 使用HttpClient 4.x替代HttpClient 5.x -->

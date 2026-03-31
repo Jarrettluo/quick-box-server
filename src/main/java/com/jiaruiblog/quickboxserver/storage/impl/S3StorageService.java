@@ -27,6 +27,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -579,12 +581,21 @@ public class S3StorageService extends AbstractStorageService {
                 CreateMultipartUploadResponse createResponse = s3Client.createMultipartUpload(createRequest);
                 String uploadId = createResponse.uploadId();
 
+                // 按分片号排序，确保字典序导致的乱序问题（如 1,10,2 变为 1,2,10）
+                // 这样最后一个分片（数字最大）会是 S3 的最后一个 part，满足最小5MB要求
+                List<S3Object> sortedChunks = chunks.stream()
+                        .sorted((a, b) -> {
+                            int numA = Integer.parseInt(a.key().substring(a.key().lastIndexOf('_') + 1));
+                            int numB = Integer.parseInt(b.key().substring(b.key().lastIndexOf('_') + 1));
+                            return Integer.compare(numA, numB);
+                        })
+                        .collect(Collectors.toList());
+
                 // 上传所有分片
                 List<CompletedPart> completedParts = new ArrayList<>();
                 int partNumber = 1;
-                for (S3Object chunk : chunks) {
+                for (S3Object chunk : sortedChunks) {
                     String chunkKey = chunk.key();
-                    int chunkNum = Integer.parseInt(chunkKey.substring(chunkKey.lastIndexOf('_') + 1));
 
                     UploadPartCopyRequest copyRequest = UploadPartCopyRequest.builder()
                         .sourceBucket(bucketName)
@@ -657,31 +668,16 @@ public class S3StorageService extends AbstractStorageService {
 
             for (S3Object obj : objects) {
                 String key = obj.key();
-                // 跳过文件夹本身的 key 和 metadata 文件
+                // 跳过文件夹本身的 key（末尾为/）、metadata 文件
                 if (key.equals(folderPath) || key.endsWith(".metadata.json") || key.endsWith("/")) {
                     continue;
                 }
 
                 // 计算相对路径作为 ZIP 条目名
+                // 合并后，文件直接存储在 folderPath 下的子目录中
+                // 例如: folderPath + "内层文件夹/2.报考须知.doc"
+                // keyAfterFolder 就是 ZIP 条目名: "内层文件夹/2.报考须知.doc"
                 String keyAfterFolder = key.substring(folderPath.length());
-                // key格式: chunks/{encodedFileName}，需要去掉chunks/前缀
-                if (!keyAfterFolder.startsWith("chunks/")) {
-                    continue;
-                }
-                String encodedFileName = keyAfterFolder.substring("chunks/".length());
-
-                // 解码获取relativePath和filename（需要加后缀用于解码）
-                String[] decoded = decodeChunkFileName(encodedFileName + "_1");
-                String relativePath = decoded[0];
-                String filename = decoded[1];
-
-                // 构建ZIP条目名：relativePath/filename
-                String entryName;
-                if (relativePath == null || relativePath.isEmpty()) {
-                    entryName = filename;
-                } else {
-                    entryName = relativePath + "/" + filename;
-                }
 
                 // 下载文件内容
                 GetObjectRequest getRequest = GetObjectRequest.builder()
@@ -692,7 +688,7 @@ public class S3StorageService extends AbstractStorageService {
                 try (ResponseInputStream<GetObjectResponse> response = s3Client.getObject(getRequest)) {
                     byte[] fileContent = response.readAllBytes();
 
-                    ZipEntry entry = new ZipEntry(entryName);
+                    ZipEntry entry = new ZipEntry(keyAfterFolder);
                     entry.setSize(fileContent.length);
                     zos.putNextEntry(entry);
                     zos.write(fileContent);
@@ -1120,7 +1116,7 @@ public class S3StorageService extends AbstractStorageService {
         private LocalDateTime createTime;
         private LocalDateTime lastUpdateTime;
         private Map<String, Object> metadata;
-        private Set<String> uploadedChunks = new TreeSet<>();
+        private Set<String> uploadedChunks = new CopyOnWriteArraySet<>();
         private long uploadedSize = 0;
         private boolean folderUpload = false;
     }

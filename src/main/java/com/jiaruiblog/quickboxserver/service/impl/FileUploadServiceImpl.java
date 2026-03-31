@@ -305,6 +305,14 @@ public class FileUploadServiceImpl implements FileUploadService {
                 Map<?, ?> folderInfo = objectMapper.readValue(folderJson, Map.class);
                 String folderPath = (String) folderInfo.get("folderPath");
                 if (folderPath != null) {
+                    // For S3 storage paths (e.g., "uploads/folders/xxx"), skip local file check
+                    // since the folder exists in S3, not on local filesystem
+                    if (folderPath.startsWith("uploads/")) {
+                        // S3 path - trust the metadata exists if we successfully retrieved folderJson
+                        // Return a File pointing to system temp dir (only used for isDirectory() check)
+                        // The actual folder info comes from folderUploadService.getFolderInfo()
+                        return new File(System.getProperty("java.io.tmpdir"));
+                    }
                     File folder = new File(folderPath);
                     if (folder.exists() && folder.isDirectory()) {
                         return folder;
