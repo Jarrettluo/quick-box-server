@@ -1,5 +1,6 @@
 package com.jiaruiblog.quickboxserver.storage;
 
+import com.jiaruiblog.quickboxserver.config.FileStorageConfig;
 import com.jiaruiblog.quickboxserver.storage.impl.LocalFileStorageService;
 import com.jiaruiblog.quickboxserver.storage.impl.S3StorageService;
 import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
@@ -26,6 +27,12 @@ public class StorageServiceFactory {
     private StorageService primaryStorageService;
     private final Map<String, StorageConfig> storageConfigs = new HashMap<>();
 
+    private final FileStorageConfig fileStorageConfig;
+
+    public StorageServiceFactory(FileStorageConfig fileStorageConfig) {
+        this.fileStorageConfig = fileStorageConfig;
+    }
+
     /**
      * 初始化存储服务
      */
@@ -42,6 +49,7 @@ public class StorageServiceFactory {
 
     /**
      * 初始化默认本地存储服务
+     * 使用FileStorageConfig配置，确保与application.yml保持一致
      */
     private void initDefaultLocalStorage() {
         try {
@@ -53,9 +61,10 @@ public class StorageServiceFactory {
             config.setPriority(1);
 
             StorageConfig.LocalConfig localConfig = new StorageConfig.LocalConfig();
-            localConfig.setBasePath(System.getProperty("user.home") + "/quickbox/storage");
-            localConfig.setChunkPath(System.getProperty("user.home") + "/quickbox/chunks");
-            localConfig.setFilePath(System.getProperty("user.home") + "/quickbox/files");
+            // 使用FileStorageConfig的配置，确保跨平台兼容（Windows/Linux）
+            localConfig.setBasePath(fileStorageConfig.getFullChunksPath());
+            localConfig.setChunkPath(fileStorageConfig.getFullChunksPath());
+            localConfig.setFilePath(fileStorageConfig.getFullFinalPath());
             localConfig.setCreateDirectories(true);
             localConfig.setUseTempFiles(true);
             localConfig.setTempFilePrefix("quickbox_");
@@ -66,6 +75,8 @@ public class StorageServiceFactory {
             registerStorageService(storageService);
 
             log.info("创建默认本地存储服务: {}", storageService.getStorageName());
+            log.info("存储路径配置 - chunks: {}, files: {}",
+                fileStorageConfig.getFullChunksPath(), fileStorageConfig.getFullFinalPath());
         } catch (Exception e) {
             log.error("初始化默认本地存储服务失败", e);
         }
