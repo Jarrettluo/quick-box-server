@@ -2,7 +2,8 @@ package com.jiaruiblog.quickboxserver.config;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -31,12 +32,19 @@ public class RedisConfig {
 
         // 配置Jackson序列化
         ObjectMapper objectMapper = new ObjectMapper();
-        // 启用类型信息，支持反序列化复杂对象
+        // 启用类型信息，支持反序列化复杂对象（使用安全的类型验证器）
+        PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
+                .allowIfBaseType(Object.class)
+                .build();
         objectMapper.activateDefaultTyping(
-                LaissezFaireSubTypeValidator.instance,
+                ptv,
                 ObjectMapper.DefaultTyping.NON_FINAL,
                 JsonTypeInfo.As.PROPERTY
         );
+        // 支持 Java 8 日期时间类型序列化
+        objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+        // 配置日期时间格式
+        objectMapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
         GenericJackson2JsonRedisSerializer serializer =
                 new GenericJackson2JsonRedisSerializer(objectMapper);

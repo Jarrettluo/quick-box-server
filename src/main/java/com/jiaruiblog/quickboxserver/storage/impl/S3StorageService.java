@@ -1,6 +1,11 @@
 package com.jiaruiblog.quickboxserver.storage.impl;
 
-import com.jiaruiblog.quickboxserver.storage.model.*;
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
+import com.jiaruiblog.quickboxserver.storage.model.FileInfo;
+import com.jiaruiblog.quickboxserver.storage.model.FolderInfo;
+import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
+import com.jiaruiblog.quickboxserver.storage.model.StorageHealth;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
@@ -12,19 +17,22 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.time.Duration;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
  * S3/MinIO对象存储服务实现
@@ -46,7 +54,7 @@ public class S3StorageService extends AbstractStorageService {
 
         StorageConfig.S3Config s3Config = config.getS3Config();
         if (s3Config == null) {
-            throw new IllegalArgumentException("S3配置不能为空");
+            throw new BusinessException(ErrorCode.STORAGE_CONFIG_EMPTY);
         }
 
         this.bucketName = s3Config.getBucketName();
@@ -91,7 +99,7 @@ public class S3StorageService extends AbstractStorageService {
             return builder.build();
         } catch (Exception e) {
             log.error("构建S3客户端失败", e);
-            throw new RuntimeException("构建S3客户端失败", e);
+            throw new BusinessException(ErrorCode.S3_CLIENT_BUILD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -127,10 +135,10 @@ public class S3StorageService extends AbstractStorageService {
 
         } catch (URISyntaxException e) {
             log.error("S3端点URL格式错误: {}", s3Config.getEndpoint(), e);
-            throw new RuntimeException("无效的S3端点配置", e);
+            throw new BusinessException(ErrorCode.S3_ENDPOINT_INVALID, e.getMessage(), e);
         } catch (Exception e) {
             log.error("构建S3预签名客户端失败", e);
-            throw new RuntimeException("构建S3预签名客户端失败", e);
+            throw new BusinessException(ErrorCode.S3_PRESIGNER_BUILD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -140,7 +148,7 @@ public class S3StorageService extends AbstractStorageService {
     public String initFileUpload(String fileId, String fileName, long fileSize, Map<String, Object> metadata) {
         validateFilePath(fileId);
 
-        String sessionId = UUID.randomUUID().toString();
+        String sessionId = (fileId != null && !fileId.isEmpty()) ? fileId : UUID.randomUUID().toString();
         String objectKey = buildObjectKey("files", fileId, fileName);
 
         S3UploadSession session = new S3UploadSession();
@@ -175,14 +183,14 @@ public class S3StorageService extends AbstractStorageService {
             s3Client.putObject(request, RequestBody.fromInputStream(chunkData, chunkSize));
 
             // 更新会话状态
-            session.getUploadedChunks().add(chunkNumber);
+            session.getUploadedChunks().add(String.valueOf(chunkNumber));
             session.setUploadedSize(session.getUploadedSize() + chunkSize);
             session.setLastUpdateTime(LocalDateTime.now());
 
             log.debug("上传S3文件分片成功: {} - {} ({} bytes)", sessionId, chunkNumber, chunkSize);
         } catch (Exception e) {
             log.error("上传S3文件分片失败", e);
-            throw new RuntimeException("上传S3文件分片失败", e);
+            throw new BusinessException(ErrorCode.S3_CHUNK_UPLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -202,8 +210,8 @@ public class S3StorageService extends AbstractStorageService {
 
             // 上传所有分片
             List<CompletedPart> completedParts = new ArrayList<>();
-            for (int chunkNumber : session.getUploadedChunks()) {
-                String chunkKey = buildChunkKey(session.getObjectKey(), chunkNumber);
+            for (String chunkNumber : session.getUploadedChunks()) {
+                String chunkKey = buildChunkKey(session.getObjectKey(), Integer.parseInt(chunkNumber));
 
                 // 复制分片到多部分上传
                 UploadPartCopyRequest copyRequest = UploadPartCopyRequest.builder()
@@ -212,13 +220,13 @@ public class S3StorageService extends AbstractStorageService {
                     .destinationBucket(bucketName)
                     .destinationKey(session.getObjectKey())
                     .uploadId(uploadId)
-                    .partNumber(chunkNumber + 1) // S3 part numbers start from 1
+                    .partNumber(Integer.parseInt(chunkNumber) + 1) // S3 part numbers start from 1
                     .build();
 
                 UploadPartCopyResponse copyResponse = s3Client.uploadPartCopy(copyRequest);
 
                 CompletedPart part = CompletedPart.builder()
-                    .partNumber(chunkNumber + 1)
+                    .partNumber(Integer.parseInt(chunkNumber) + 1)
                     .eTag(copyResponse.copyPartResult().eTag())
                     .build();
 
@@ -250,7 +258,7 @@ public class S3StorageService extends AbstractStorageService {
             return objectKey;
         } catch (Exception e) {
             log.error("合并S3文件分片失败", e);
-            throw new RuntimeException("合并S3文件分片失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_MERGE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -268,7 +276,25 @@ public class S3StorageService extends AbstractStorageService {
             return response;
         } catch (Exception e) {
             log.error("下载S3文件失败", e);
-            throw new RuntimeException("下载S3文件失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_DOWNLOAD_FAILED, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 获取 S3 对象的元数据（用于获取 Content-Length 等）
+     * @param objectKey S3 对象键
+     * @return S3 对象元数据
+     */
+    public HeadObjectResponse getObjectMetadata(String objectKey) {
+        try {
+            HeadObjectRequest request = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(objectKey)
+                    .build();
+            return s3Client.headObject(request);
+        } catch (Exception e) {
+            log.error("获取S3对象元数据失败: {}", objectKey, e);
+            throw new BusinessException(ErrorCode.S3_METADATA_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -287,8 +313,23 @@ public class S3StorageService extends AbstractStorageService {
             log.info("删除S3文件成功: {}", filePath);
         } catch (Exception e) {
             log.error("删除S3文件失败", e);
-            throw new RuntimeException("删除S3文件失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_DELETE_FAILED, e.getMessage(), e);
         }
+    }
+
+    @Override
+    public Map<String, Object> getSessionInfo(String sessionId) {
+        S3UploadSession session = uploadSessions.get(sessionId);
+        if (session == null) {
+            return null;
+        }
+        Map<String, Object> info = new HashMap<>();
+        info.put("uploadedChunks", session.uploadedChunks);
+        info.put("fileName", session.fileName);
+        info.put("fileSize", session.fileSize);
+        info.put("uploadedSize", session.uploadedSize);
+        info.put("objectKey", session.objectKey);
+        return info;
     }
 
     @Override
@@ -328,10 +369,10 @@ public class S3StorageService extends AbstractStorageService {
             return fileInfo;
         } catch (NoSuchKeyException e) {
             log.error("S3文件不存在: {}", filePath);
-            throw new RuntimeException("文件不存在: " + filePath);
+            throw new BusinessException(ErrorCode.S3_FILE_NOT_EXISTS, filePath);
         } catch (Exception e) {
             log.error("获取S3文件信息失败", e);
-            throw new RuntimeException("获取文件信息失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_INFO_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -351,7 +392,7 @@ public class S3StorageService extends AbstractStorageService {
             return false;
         } catch (Exception e) {
             log.error("检查S3文件存在失败", e);
-            throw new RuntimeException("检查文件存在失败", e);
+            throw new BusinessException(ErrorCode.S3_FILE_EXISTS_CHECK_FAILED, e.getMessage(), e);
         }
     }
 
@@ -361,11 +402,11 @@ public class S3StorageService extends AbstractStorageService {
     public String initFolderUpload(String folderId, String folderName, int totalFiles, long totalSize, String structureJson) {
         validateFolderPath(folderId);
 
-        String sessionId = UUID.randomUUID().toString();
+        // 使用传入的 folderId（实际上是 accessCode）作为存储文件夹名
         String folderKey = buildObjectKey("folders", folderId, folderName) + "/";
 
         S3UploadSession session = new S3UploadSession();
-        session.setSessionId(sessionId);
+        session.setSessionId(folderId);
         session.setFolderId(folderId);
         session.setFolderName(folderName);
         session.setTotalFiles(totalFiles);
@@ -375,32 +416,257 @@ public class S3StorageService extends AbstractStorageService {
         session.setCreateTime(LocalDateTime.now());
         session.setFolderUpload(true);
 
-        uploadSessions.put(sessionId, session);
+        uploadSessions.put(folderId, session);
 
-        log.info("初始化S3文件夹上传: {} -> {} ({} files)", sessionId, folderKey, totalFiles);
-        return sessionId;
+        log.info("初始化S3文件夹上传: {} -> {} ({} files)", folderId, folderKey, totalFiles);
+        return folderId;
     }
 
     @Override
-    public void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize) {
-        // S3文件夹上传使用与文件相同的方式
-        uploadFileChunk(sessionId, chunkNumber, chunkData, chunkSize);
+    public void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize,
+                                  String relativePath, String filename) {
+        S3UploadSession session = getUploadSession(sessionId);
+
+        try {
+            // 编码文件名
+            String encodedFileName = encodeChunkFileName(relativePath, filename, chunkNumber);
+            String chunkKey = buildFolderChunkKey(session.getObjectKey(), encodedFileName);
+
+            // 上传分片
+            PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(chunkKey)
+                .contentLength(chunkSize)
+                .build();
+
+            s3Client.putObject(request, RequestBody.fromInputStream(chunkData, chunkSize));
+
+            // 更新会话状态
+            session.getUploadedChunks().add(encodedFileName);
+            session.setUploadedSize(session.getUploadedSize() + chunkSize);
+            session.setLastUpdateTime(LocalDateTime.now());
+
+            log.debug("上传S3文件夹分片成功: {} - {} ({} bytes)", sessionId, chunkNumber, chunkSize);
+        } catch (Exception e) {
+            log.error("上传S3文件夹分片失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_CHUNK_UPLOAD_FAILED, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public boolean folderChunkExists(String sessionId, int chunkNumber, String relativePath, String filename) {
+        try {
+            S3UploadSession session = getUploadSession(sessionId);
+            String encodedFileName = encodeChunkFileName(relativePath, filename, chunkNumber);
+            String chunkKey = buildFolderChunkKey(session.getObjectKey(), encodedFileName);
+            boolean exists = objectExists(chunkKey);
+            log.debug("检查S3文件夹分片是否存在: {} - {} -> {}", sessionId, encodedFileName, exists);
+            return exists;
+        } catch (Exception e) {
+            log.error("检查S3文件夹分片是否存在失败", e);
+            return false;
+        }
+    }
+
+    /**
+     * 编码：将 relativePath 和 filename 编码为 chunk 文件名
+     * 使用Base64编码relativePath以避免下划线混淆问题
+     * @param relativePath 相对路径 (可为 null 或空)
+     * @param filename 文件名
+     * @param chunkNumber 分片号
+     * @return 编码后的文件名，如 "bXlXZm9sZGVyL3N1YmRpcg==__c.txt_1" 或 "_||c.txt_1" (空路径时)
+     */
+    public static String encodeChunkFileName(String relativePath, String filename, int chunkNumber) {
+        String encodedPath;
+        if (relativePath == null || relativePath.isEmpty()) {
+            encodedPath = "_";
+        } else {
+            // 如果relativePath包含URL编码字符（如%2F），先解码
+            String pathToEncode = relativePath;
+            if (relativePath.contains("%")) {
+                try {
+                    pathToEncode = URLDecoder.decode(relativePath, StandardCharsets.UTF_8);
+                } catch (Exception e) {
+                    pathToEncode = relativePath;
+                }
+            }
+            // 使用URL-safe Base64编码relativePath，避免下划线混淆
+            encodedPath = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(pathToEncode.getBytes(StandardCharsets.UTF_8));
+        }
+        // 使用 "__" 作为编码路径和文件名的分隔符（避免Windows非法字符 | ），"_" 作为分片号分隔符
+        return encodedPath + "__" + filename + "_" + chunkNumber;
+    }
+
+    /**
+     * 解码：从 chunk 文件名还原 relativePath 和 filename
+     * @param encodedFileName 编码后的文件名，如 "bXlXZm9sZGVyL3N1YmRpcg==||c.txt_1"
+     * @return String[3] = [relativePath, filename, chunkNumberStr]
+     */
+    public static String[] decodeChunkFileName(String encodedFileName) {
+        // 找到最后一个下划线（分片号分隔符）
+        int lastUnderscore = encodedFileName.lastIndexOf('_');
+        String pathAndFile = encodedFileName.substring(0, lastUnderscore);
+        String chunkNumberStr = encodedFileName.substring(lastUnderscore + 1);
+
+        // 找到双下划线（路径和文件名分隔符）
+        int doubleUnderscore = pathAndFile.indexOf("__");
+        if (doubleUnderscore == -1) {
+            throw new BusinessException(ErrorCode.INVALID_CHUNK_FILENAME_FORMAT, encodedFileName);
+        }
+
+        String encodedPath = pathAndFile.substring(0, doubleUnderscore);
+        String filename = pathAndFile.substring(doubleUnderscore + 2);
+
+        // 解码relativePath：空路径标记还原为空字符串，Base64编码的路径进行解码
+        String relativePath;
+        if ("_".equals(encodedPath)) {
+            relativePath = "";
+        } else {
+            relativePath = new String(Base64.getUrlDecoder().decode(encodedPath), StandardCharsets.UTF_8);
+        }
+
+        return new String[]{relativePath, filename, chunkNumberStr};
+    }
+
+    private String buildFolderChunkKey(String objectKey, String encodedFileName) {
+        // folders/{folderId}/{folderName}/chunks/{encodedFileName}
+        return objectKey + "chunks/" + encodedFileName;
     }
 
     @Override
     public String mergeFolderChunks(String sessionId) {
         S3UploadSession session = getUploadSession(sessionId);
         if (!session.isFolderUpload()) {
-            throw new IllegalArgumentException("不是文件夹上传会话");
+            throw new BusinessException(ErrorCode.NOT_A_FOLDER_UPLOAD);
         }
 
         try {
-            // 合并ZIP文件
-            String zipKey = session.getObjectKey() + "folder.zip";
-            String mergedZipKey = mergeFileChunksInternal(sessionId, zipKey);
+            String chunksPrefix = session.getObjectKey() + "chunks/";
 
-            // 解压ZIP文件到文件夹
-            extractZipToFolder(mergedZipKey, session.getObjectKey());
+            // 列出所有分片
+            ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
+                .bucket(bucketName)
+                .prefix(chunksPrefix)
+                .build();
+
+            List<S3Object> chunkObjects = s3Client.listObjectsV2(listRequest).contents();
+
+            // 按文件分组
+            Map<String, List<S3Object>> fileChunksMap = new HashMap<>();
+            for (S3Object obj : chunkObjects) {
+                String key = obj.key();
+                String encodedFileName = key.substring(chunksPrefix.length());
+                // 去掉 chunkNumber 获取文件的唯一标识
+                int lastUnderscore = encodedFileName.lastIndexOf('_');
+                String fileKey = encodedFileName.substring(0, lastUnderscore);
+                fileChunksMap.computeIfAbsent(fileKey, k -> new ArrayList<>()).add(obj);
+            }
+
+            // 合并每个文件
+            int mergedFiles = 0;
+            for (Map.Entry<String, List<S3Object>> entry : fileChunksMap.entrySet()) {
+                String fileKey = entry.getKey();
+                List<S3Object> chunks = entry.getValue();
+
+                // 解码获取 relativePath 和 filename
+                String[] decoded = decodeChunkFileName(fileKey + "_1");
+                String relativePath = decoded[0];
+                String filename = decoded[1];
+
+                // 构建目标路径
+                // objectKey 格式: {prefix}/folders/{folderId}/{folderName}/
+                // relativePath 可能是 "folderName/subdir/file.txt" 或 "subdir/file.txt"
+                String targetKey = session.getObjectKey();
+                if (relativePath != null && !relativePath.isEmpty()) {
+                    // 去掉文件名得到目录部分
+                    String relativePathDir = relativePath;
+                    if (relativePath.endsWith(filename)) {
+                        relativePathDir = relativePath.substring(0, relativePath.length() - filename.length());
+                    }
+                    // 去掉末尾的 "/"
+                    if (relativePathDir.endsWith("/")) {
+                        relativePathDir = relativePathDir.substring(0, relativePathDir.length() - 1);
+                    }
+
+                    if (!relativePathDir.isEmpty()) {
+                        // 检查 relativePathDir 是否等于 folderName
+                        if (relativePathDir.equals(session.getFolderName())) {
+                            // relativePathDir 就是 folderName，文件直接在 finalFolder 下
+                            targetKey = session.getObjectKey();
+                        } else if (relativePathDir.startsWith(session.getFolderName() + "/")) {
+                            // relativePath 包含 folderName 作为前缀，去掉它得到子目录
+                            String subPath = relativePathDir.substring(session.getFolderName().length() + 1);
+                            if (!subPath.isEmpty()) {
+                                targetKey = session.getObjectKey() + subPath + "/";
+                            }
+                        } else {
+                            // relativePath 不包含 folderName，relativePath 本身就是子目录
+                            targetKey = session.getObjectKey() + relativePathDir + "/";
+                        }
+                    }
+                }
+                targetKey = targetKey + filename;
+
+                // 创建多部分上传
+                CreateMultipartUploadRequest createRequest = CreateMultipartUploadRequest.builder()
+                    .bucket(bucketName)
+                    .key(targetKey)
+                    .build();
+                CreateMultipartUploadResponse createResponse = s3Client.createMultipartUpload(createRequest);
+                String uploadId = createResponse.uploadId();
+
+                // 按分片号排序，确保字典序导致的乱序问题（如 1,10,2 变为 1,2,10）
+                // 这样最后一个分片（数字最大）会是 S3 的最后一个 part，满足最小5MB要求
+                List<S3Object> sortedChunks = chunks.stream()
+                        .sorted((a, b) -> {
+                            int numA = Integer.parseInt(a.key().substring(a.key().lastIndexOf('_') + 1));
+                            int numB = Integer.parseInt(b.key().substring(b.key().lastIndexOf('_') + 1));
+                            return Integer.compare(numA, numB);
+                        })
+                        .collect(Collectors.toList());
+
+                // 上传所有分片
+                List<CompletedPart> completedParts = new ArrayList<>();
+                int partNumber = 1;
+                for (S3Object chunk : sortedChunks) {
+                    String chunkKey = chunk.key();
+
+                    UploadPartCopyRequest copyRequest = UploadPartCopyRequest.builder()
+                        .sourceBucket(bucketName)
+                        .sourceKey(chunkKey)
+                        .destinationBucket(bucketName)
+                        .destinationKey(targetKey)
+                        .uploadId(uploadId)
+                        .partNumber(partNumber++)
+                        .build();
+
+                    UploadPartCopyResponse copyResponse = s3Client.uploadPartCopy(copyRequest);
+                    completedParts.add(CompletedPart.builder()
+                        .partNumber(partNumber - 1)
+                        .eTag(copyResponse.copyPartResult().eTag())
+                        .build());
+                }
+
+                // 完成多部分上传
+                CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder()
+                    .bucket(bucketName)
+                    .key(targetKey)
+                    .uploadId(uploadId)
+                    .multipartUpload(CompletedMultipartUpload.builder().parts(completedParts).build())
+                    .build();
+                s3Client.completeMultipartUpload(completeRequest);
+
+                // 删除临时分片
+                for (S3Object chunk : chunks) {
+                    deleteObject(chunk.key());
+                }
+
+                mergedFiles++;
+            }
+
+            // 删除 chunks 目录前缀本身
+            deleteObject(chunksPrefix);
 
             // 保存文件夹元数据
             saveFolderMetadata(session.getObjectKey(), session);
@@ -409,12 +675,12 @@ public class S3StorageService extends AbstractStorageService {
             uploadSessions.remove(sessionId);
 
             String folderKey = session.getObjectKey();
-            log.info("合并S3文件夹分片成功: {} -> {} ({} files)", sessionId, folderKey, session.getTotalFiles());
+            log.info("合并S3文件夹分片成功: {} -> {} ({} files)", sessionId, folderKey, mergedFiles);
 
             return folderKey;
         } catch (Exception e) {
             log.error("合并S3文件夹分片失败", e);
-            throw new RuntimeException("合并S3文件夹分片失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_MERGE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -423,11 +689,58 @@ public class S3StorageService extends AbstractStorageService {
         validateFolderPath(folderPath);
 
         try {
-            String zipKey = folderPath + "folder.zip";
-            return downloadFile(zipKey);
+            // 列出文件夹中的所有对象
+            ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
+                .bucket(bucketName)
+                .prefix(folderPath)
+                .build();
+
+            List<S3Object> objects = s3Client.listObjectsV2(listRequest).contents();
+
+            // 在内存中创建 ZIP
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ZipOutputStream zos = new ZipOutputStream(baos);
+
+            for (S3Object obj : objects) {
+                String key = obj.key();
+                // 跳过文件夹本身的 key（末尾为/）、metadata 文件
+                if (key.equals(folderPath) || key.endsWith(".metadata.json") || key.endsWith("/")) {
+                    continue;
+                }
+
+                // 计算相对路径作为 ZIP 条目名
+                // 合并后，文件直接存储在 folderPath 下的子目录中
+                // 例如: folderPath + "内层文件夹/2.报考须知.doc"
+                // keyAfterFolder 就是 ZIP 条目名: "内层文件夹/2.报考须知.doc"
+                String keyAfterFolder = key.substring(folderPath.length());
+
+                // 下载文件内容
+                GetObjectRequest getRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build();
+
+                try (ResponseInputStream<GetObjectResponse> response = s3Client.getObject(getRequest)) {
+                    byte[] fileContent = response.readAllBytes();
+
+                    ZipEntry entry = new ZipEntry(keyAfterFolder);
+                    entry.setSize(fileContent.length);
+                    zos.putNextEntry(entry);
+                    zos.write(fileContent);
+                    zos.closeEntry();
+                }
+            }
+
+            zos.finish();
+            zos.flush();
+
+            byte[] zipContent = baos.toByteArray();
+            log.info("S3文件夹ZIP创建成功: {} ({} bytes)", folderPath, zipContent.length);
+
+            return new ByteArrayInputStream(zipContent);
         } catch (Exception e) {
             log.error("下载S3文件夹为ZIP失败", e);
-            throw new RuntimeException("下载文件夹为ZIP失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_DOWNLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -439,13 +752,13 @@ public class S3StorageService extends AbstractStorageService {
             // 检查文件夹是否存在（通过检查元数据文件）
             String metadataKey = buildMetadataKey(folderPath);
             if (!objectExists(metadataKey)) {
-                throw new RuntimeException("文件夹不存在: " + folderPath);
+                throw new BusinessException(ErrorCode.S3_FOLDER_NOT_EXISTS, folderPath);
             }
 
             // 加载文件夹元数据
             Map<String, Object> metadata = loadMetadata(metadataKey);
             if (metadata == null) {
-                throw new RuntimeException("文件夹元数据不存在: " + folderPath);
+                throw new BusinessException(ErrorCode.S3_FOLDER_METADATA_NOT_EXISTS, folderPath);
             }
 
             FolderInfo folderInfo = new FolderInfo();
@@ -485,7 +798,7 @@ public class S3StorageService extends AbstractStorageService {
             return folderInfo;
         } catch (Exception e) {
             log.error("获取S3文件夹信息失败", e);
-            throw new RuntimeException("获取文件夹信息失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_INFO_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -499,7 +812,7 @@ public class S3StorageService extends AbstractStorageService {
             return objectExists(metadataKey);
         } catch (Exception e) {
             log.error("检查S3文件夹存在失败", e);
-            throw new RuntimeException("检查文件夹存在失败", e);
+            throw new BusinessException(ErrorCode.S3_FOLDER_EXISTS_CHECK_FAILED, e.getMessage(), e);
         }
     }
 
@@ -519,8 +832,13 @@ public class S3StorageService extends AbstractStorageService {
             if (session.getCreateTime().isBefore(before)) {
                 try {
                     // 清理临时分片
-                    for (int chunkNumber : session.getUploadedChunks()) {
-                        String chunkKey = buildChunkKey(session.getObjectKey(), chunkNumber);
+                    for (String chunkIdentifier : session.getUploadedChunks()) {
+                        String chunkKey;
+                        if (session.isFolderUpload()) {
+                            chunkKey = buildFolderChunkKey(session.getObjectKey(), chunkIdentifier);
+                        } else {
+                            chunkKey = buildChunkKey(session.getObjectKey(), Integer.parseInt(chunkIdentifier));
+                        }
                         deleteObject(chunkKey);
                     }
 
@@ -625,7 +943,7 @@ public class S3StorageService extends AbstractStorageService {
     private S3UploadSession getUploadSession(String sessionId) {
         S3UploadSession session = uploadSessions.get(sessionId);
         if (session == null) {
-            throw new IllegalArgumentException("上传会话不存在: " + sessionId);
+            throw new BusinessException(ErrorCode.UPLOAD_SESSION_NOT_EXISTS, sessionId);
         }
         return session;
     }
@@ -757,65 +1075,6 @@ public class S3StorageService extends AbstractStorageService {
         }
     }
 
-    private String mergeFileChunksInternal(String sessionId, String targetKey) {
-        S3UploadSession session = getUploadSession(sessionId);
-
-        // 创建多部分上传
-        CreateMultipartUploadRequest createRequest = CreateMultipartUploadRequest.builder()
-            .bucket(bucketName)
-            .key(targetKey)
-            .build();
-
-        CreateMultipartUploadResponse createResponse = s3Client.createMultipartUpload(createRequest);
-        String uploadId = createResponse.uploadId();
-
-        // 上传所有分片
-        List<CompletedPart> completedParts = new ArrayList<>();
-        for (int chunkNumber : session.getUploadedChunks()) {
-            String chunkKey = buildChunkKey(session.getObjectKey(), chunkNumber);
-
-            UploadPartCopyRequest copyRequest = UploadPartCopyRequest.builder()
-                .sourceBucket(bucketName)
-                .sourceKey(chunkKey)
-                .destinationBucket(bucketName)
-                .destinationKey(targetKey)
-                .uploadId(uploadId)
-                .partNumber(chunkNumber + 1)
-                .build();
-
-            UploadPartCopyResponse copyResponse = s3Client.uploadPartCopy(copyRequest);
-
-            CompletedPart part = CompletedPart.builder()
-                .partNumber(chunkNumber + 1)
-                .eTag(copyResponse.copyPartResult().eTag())
-                .build();
-
-            completedParts.add(part);
-
-            // 删除临时分片
-            deleteObject(chunkKey);
-        }
-
-        // 完成多部分上传
-        CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder()
-            .bucket(bucketName)
-            .key(targetKey)
-            .uploadId(uploadId)
-            .multipartUpload(CompletedMultipartUpload.builder().parts(completedParts).build())
-            .build();
-
-        s3Client.completeMultipartUpload(completeRequest);
-
-        return targetKey;
-    }
-
-    private void extractZipToFolder(String zipKey, String folderKey) {
-        // TODO: 实现S3上的ZIP解压
-        // 这需要下载ZIP文件，解压，然后上传每个文件到S3
-        // 由于S3不支持直接解压，这里需要实现流式解压和上传
-        log.warn("S3 ZIP解压功能暂未实现: {} -> {}", zipKey, folderKey);
-    }
-
     // ==================== 内部类 ====================
 
     @lombok.Data
@@ -833,7 +1092,7 @@ public class S3StorageService extends AbstractStorageService {
         private LocalDateTime createTime;
         private LocalDateTime lastUpdateTime;
         private Map<String, Object> metadata;
-        private Set<Integer> uploadedChunks = new TreeSet<>();
+        private Set<String> uploadedChunks = new CopyOnWriteArraySet<>();
         private long uploadedSize = 0;
         private boolean folderUpload = false;
     }

@@ -1,5 +1,7 @@
 package com.jiaruiblog.quickboxserver.storage.impl;
 
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import com.jiaruiblog.quickboxserver.storage.StorageEventListener;
 import com.jiaruiblog.quickboxserver.storage.StorageService;
 import com.jiaruiblog.quickboxserver.storage.model.*;
@@ -8,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -279,77 +280,78 @@ public abstract class AbstractStorageService implements StorageService {
 
     @Override
     public String initFolderUpload(String folderId, String folderName, int totalFiles, long totalSize, String structureJson) {
-        throw new UnsupportedOperationException("文件夹上传不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
-    public void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize) {
-        throw new UnsupportedOperationException("文件夹分片上传不支持");
+    public void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize,
+                                  String relativePath, String filename) {
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
+    }
+
+    @Override
+    public boolean folderChunkExists(String sessionId, int chunkNumber, String relativePath, String filename) {
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public String mergeFolderChunks(String sessionId) {
-        throw new UnsupportedOperationException("文件夹分片合并不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public InputStream downloadFolderAsZip(String folderPath) {
-        throw new UnsupportedOperationException("文件夹ZIP下载不支持");
-    }
-
-    @Override
-    public InputStream downloadFolderFile(String folderPath, String relativePath) {
-        throw new UnsupportedOperationException("文件夹文件下载不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public void deleteFolder(String folderPath) {
-        throw new UnsupportedOperationException("文件夹删除不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public FolderInfo getFolderInfo(String folderPath) {
-        throw new UnsupportedOperationException("文件夹信息获取不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public boolean folderExists(String folderPath) {
-        throw new UnsupportedOperationException("文件夹存在检查不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public void downloadFileToStream(String filePath, OutputStream outputStream) {
-        throw new UnsupportedOperationException("文件流式下载不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public List<StorageItem> listDirectory(String path) {
-        throw new UnsupportedOperationException("目录列表不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public void createDirectory(String path) {
-        throw new UnsupportedOperationException("目录创建不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public void deleteDirectory(String path) {
-        throw new UnsupportedOperationException("目录删除不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public void batchUploadFiles(Map<String, InputStream> files) {
-        throw new UnsupportedOperationException("批量上传不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public Map<String, InputStream> batchDownloadFiles(List<String> filePaths) {
-        throw new UnsupportedOperationException("批量下载不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     @Override
     public void batchDeleteFiles(List<String> filePaths) {
-        throw new UnsupportedOperationException("批量删除不支持");
+        throw new BusinessException(ErrorCode.OPERATION_NOT_SUPPORTED);
     }
 
     // ==================== 工具方法 ====================
@@ -402,7 +404,7 @@ public abstract class AbstractStorageService implements StorageService {
      */
     protected void validateFilePath(String filePath) {
         if (filePath == null || filePath.isEmpty()) {
-            throw new IllegalArgumentException("文件路径不能为空");
+            throw new BusinessException(ErrorCode.FILE_PATH_EMPTY);
         }
 
         // 防止目录遍历攻击
@@ -412,7 +414,7 @@ public abstract class AbstractStorageService implements StorageService {
 
         // 检查路径长度
         if (filePath.length() > 4096) {
-            throw new IllegalArgumentException("文件路径过长: " + filePath);
+            throw new BusinessException(ErrorCode.FILE_PATH_TOO_LONG, filePath);
         }
     }
 
@@ -421,7 +423,7 @@ public abstract class AbstractStorageService implements StorageService {
      */
     protected void validateFolderPath(String folderPath) {
         if (folderPath == null || folderPath.isEmpty()) {
-            throw new IllegalArgumentException("文件夹路径不能为空");
+            throw new BusinessException(ErrorCode.FOLDER_PATH_EMPTY);
         }
 
         // 防止目录遍历攻击
@@ -431,7 +433,7 @@ public abstract class AbstractStorageService implements StorageService {
 
         // 检查路径长度
         if (folderPath.length() > 4096) {
-            throw new IllegalArgumentException("文件夹路径过长: " + folderPath);
+            throw new BusinessException(ErrorCode.FOLDER_PATH_TOO_LONG, folderPath);
         }
     }
 

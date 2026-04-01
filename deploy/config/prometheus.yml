@@ -1,0 +1,67 @@
+# Prometheus 配置文件
+# 适用于 QuickBox 项目的监控配置
+
+global:
+  scrape_interval:     15s # 全局抓取间隔
+  evaluation_interval: 15s # 全局评估间隔
+
+# 规则文件配置
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# 抓取配置
+scrape_configs:
+  # Prometheus 自身监控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # QuickBox 应用监控
+  - job_name: 'quickbox'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['quickbox:8080']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Node Exporter 监控（主机系统）
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # Redis 监控（使用 redis_exporter）
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+
+  # Nginx 监控（使用 nginx-vts-exporter）
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+    scrape_interval: 30s
+
+  # MinIO 监控
+  - job_name: 'minio'
+    metrics_path: '/minio/v2/metrics/cluster'
+    static_configs:
+      - targets: ['minio:9000']
+    scrape_interval: 30s
+
+  # Docker 容器监控（使用 cAdvisor）
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 30s
+
+  # Alertmanager 配置（可选）
+  # alerting:
+  #   alertmanagers:
+  #   - static_configs:
+  #     - targets: ['alertmanager:9093']
+
+  # 报警规则配置（可选）
+  # rule_files:
+  #   - "alert_rules.yml"

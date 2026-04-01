@@ -1,0 +1,29 @@
+# Grafana 数据源配置
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    version: 1
+    jsonData:
+      timeInterval: 15s
+    secureJsonData:
+      # 如果 Prometheus 启用了认证，可以在这里添加密码
+      # password: 'your_password'
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: true
+    version: 1
+    jsonData:
+      timeInterval: 15s
+    secureJsonData:
+      # 如果 Loki 启用了认证，可以在这里添加密码
+      # password: 'your_password'

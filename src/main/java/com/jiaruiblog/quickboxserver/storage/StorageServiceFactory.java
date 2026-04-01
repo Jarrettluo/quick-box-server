@@ -1,19 +1,24 @@
 package com.jiaruiblog.quickboxserver.storage;
 
+import com.jiaruiblog.quickboxserver.config.StorageProperties;
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import com.jiaruiblog.quickboxserver.storage.impl.LocalFileStorageService;
+import com.jiaruiblog.quickboxserver.storage.impl.S3StorageService;
 import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
 import com.jiaruiblog.quickboxserver.storage.model.StorageType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 存储服务工厂
- * 负责创建和管理所有存储服务实例
+ * 负责根据配置创建和管理存储服务实例
  */
 @Slf4j
 @Component
@@ -25,25 +30,40 @@ public class StorageServiceFactory {
     private StorageService primaryStorageService;
     private final Map<String, StorageConfig> storageConfigs = new HashMap<>();
 
+    private final StorageProperties storageProperties;
+
+    public StorageServiceFactory(StorageProperties storageProperties) {
+        this.storageProperties = storageProperties;
+    }
+
     /**
      * 初始化存储服务
+     * 根据配置类型（local/s3）创建对应的存储服务
      */
     @PostConstruct
     public void init() {
-        log.info("初始化存储服务工厂");
+        log.info("初始化存储服务工厂，存储类型: {}", storageProperties.getType());
 
-        // 这里应该从配置文件中加载所有存储配置
-        // 暂时创建默认的本地存储服务
-        initDefaultLocalStorage();
+        String type = storageProperties.getType().toLowerCase();
+        switch (type) {
+            case "local" -> initLocalStorage();
+            case "s3" -> initS3Storage();
+            default -> {
+                log.warn("未知的存储类型: {}，使用默认本地存储", type);
+                initLocalStorage();
+            }
+        }
 
         log.info("存储服务工厂初始化完成，共 {} 个存储服务", storageServices.size());
     }
 
     /**
-     * 初始化默认本地存储服务
+     * 初始化本地存储服务
      */
-    private void initDefaultLocalStorage() {
+    private void initLocalStorage() {
         try {
+            StorageProperties.LocalConfig localConfig = storageProperties.getLocal();
+
             StorageConfig config = new StorageConfig();
             config.setType(StorageType.LOCAL);
             config.setName("default-local");
@@ -51,22 +71,76 @@ public class StorageServiceFactory {
             config.setPrimary(true);
             config.setPriority(1);
 
-            StorageConfig.LocalConfig localConfig = new StorageConfig.LocalConfig();
-            localConfig.setBasePath(System.getProperty("user.home") + "/quickbox/storage");
-            localConfig.setChunkPath(System.getProperty("user.home") + "/quickbox/chunks");
-            localConfig.setFilePath(System.getProperty("user.home") + "/quickbox/files");
-            localConfig.setCreateDirectories(true);
-            localConfig.setUseTempFiles(true);
-            localConfig.setTempFilePrefix("quickbox_");
+            // 构建绝对路径
+            String basePath = localConfig.getBasePath();
+            String chunksPath = Paths.get(basePath, localConfig.getChunksPath()).toAbsolutePath().toString();
+            String finalPath = Paths.get(basePath, localConfig.getFinalPath()).toAbsolutePath().toString();
 
-            config.setLocalConfig(localConfig);
+            StorageConfig.LocalConfig storageLocalConfig = new StorageConfig.LocalConfig();
+            storageLocalConfig.setBasePath(basePath);
+            storageLocalConfig.setChunkPath(chunksPath);
+            storageLocalConfig.setFilePath(finalPath);
+            storageLocalConfig.setCreateDirectories(localConfig.isCreateDirectories());
+            storageLocalConfig.setUseTempFiles(localConfig.isUseTempFiles());
+            storageLocalConfig.setTempFilePrefix(localConfig.getTempFilePrefix());
+
+            config.setLocalConfig(storageLocalConfig);
 
             StorageService storageService = createStorageService(config);
             registerStorageService(storageService);
 
-            log.info("创建默认本地存储服务: {}", storageService.getStorageName());
+            log.info("创建本地存储服务: {}", storageService.getStorageName());
+            log.info("本地存储路径 - base: {}, chunks: {}, files: {}",
+                basePath, chunksPath, finalPath);
         } catch (Exception e) {
-            log.error("初始化默认本地存储服务失败", e);
+            log.error("初始化本地存储服务失败", e);
+            throw new BusinessException(ErrorCode.STORAGE_INIT_LOCAL_FAILED, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 初始化 S3 存储服务
+     */
+    private void initS3Storage() {
+        try {
+            StorageProperties.S3Config s3Config = storageProperties.getS3();
+
+            if (!s3Config.isEnabled()) {
+                log.warn("S3 存储已禁用，切换到本地存储");
+                initLocalStorage();
+                return;
+            }
+
+            StorageConfig config = new StorageConfig();
+            config.setType(StorageType.S3);
+            config.setName("default-s3");
+            config.setEnabled(true);
+            config.setPrimary(true);
+            config.setPriority(1);
+
+            StorageConfig.S3Config storageS3Config = new StorageConfig.S3Config();
+            storageS3Config.setEndpoint(s3Config.getEndpoint());
+            storageS3Config.setRegion(s3Config.getRegion());
+            storageS3Config.setAccessKey(s3Config.getAccessKey());
+            storageS3Config.setSecretKey(s3Config.getSecretKey());
+            storageS3Config.setBucketName(s3Config.getBucketName());
+            storageS3Config.setPathStyleAccess(s3Config.isPathStyleAccess());
+            storageS3Config.setUseSSL(s3Config.isUseSsl());
+            storageS3Config.setPrefix(s3Config.getPrefix());
+            storageS3Config.setPartSize(s3Config.getPartSize());
+
+            config.setS3Config(storageS3Config);
+
+            StorageService storageService = createStorageService(config);
+            registerStorageService(storageService);
+
+            log.info("创建 S3 存储服务: {} -> {}/{}",
+                storageService.getStorageName(), s3Config.getEndpoint(), s3Config.getBucketName());
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("初始化 S3 存储服务失败", e);
+            throw new BusinessException(ErrorCode.STORAGE_INIT_S3_FAILED, e.getMessage(), e);
         }
     }
 
@@ -75,11 +149,11 @@ public class StorageServiceFactory {
      */
     public StorageService createStorageService(StorageConfig config) {
         if (config == null) {
-            throw new IllegalArgumentException("存储配置不能为空");
+            throw new BusinessException(ErrorCode.STORAGE_CONFIG_EMPTY);
         }
 
         if (!config.isEnabled()) {
-            throw new IllegalArgumentException("存储服务未启用: " + config.getName());
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_NOT_ENABLED, config.getName());
         }
 
         StorageType type = config.getType();
@@ -94,19 +168,13 @@ public class StorageServiceFactory {
                 break;
             case S3:
             case MINIO:
-                // TODO: 实现S3/MinIO存储服务
-                throw new UnsupportedOperationException("S3/MinIO存储服务暂未实现");
+                storageService = new S3StorageService(config);
+                break;
             case WEBDAV:
                 // TODO: 实现WebDAV存储服务
-                throw new UnsupportedOperationException("WebDAV存储服务暂未实现");
-            case NAS:
-                // TODO: 实现NAS存储服务
-                throw new UnsupportedOperationException("NAS存储服务暂未实现");
-            case GPFS:
-                // TODO: 实现GPFS存储服务
-                throw new UnsupportedOperationException("GPFS存储服务暂未实现");
+                throw new BusinessException(ErrorCode.WEBDAV_NOT_IMPLEMENTED);
             default:
-                throw new IllegalArgumentException("不支持的存储类型: " + type);
+                throw new BusinessException(ErrorCode.STORAGE_TYPE_NOT_SUPPORTED, type.toString());
         }
 
         return storageService;
@@ -117,14 +185,14 @@ public class StorageServiceFactory {
      */
     public void registerStorageService(StorageService storageService) {
         if (storageService == null) {
-            throw new IllegalArgumentException("存储服务不能为空");
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_EMPTY);
         }
 
         String name = storageService.getStorageName();
         StorageType type = storageService.getStorageType();
 
         if (storageServices.containsKey(name)) {
-            throw new IllegalArgumentException("存储服务已存在: " + name);
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_ALREADY_EXISTS, name);
         }
 
         storageServices.put(name, storageService);
@@ -155,7 +223,7 @@ public class StorageServiceFactory {
     public StorageService getStorageService(String name) {
         StorageService service = storageServices.get(name);
         if (service == null) {
-            throw new IllegalArgumentException("存储服务不存在: " + name);
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_NOT_FOUND, name);
         }
         return service;
     }
@@ -166,7 +234,7 @@ public class StorageServiceFactory {
     public StorageService getStorageService(StorageType type) {
         StorageService service = defaultServices.get(type);
         if (service == null) {
-            throw new IllegalArgumentException("该类型的存储服务不存在: " + type);
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_NOT_FOUND, type.toString());
         }
         return service;
     }
@@ -176,7 +244,7 @@ public class StorageServiceFactory {
      */
     public StorageService getPrimaryStorageService() {
         if (primaryStorageService == null) {
-            throw new IllegalStateException("未设置主存储服务");
+            throw new BusinessException(ErrorCode.PRIMARY_STORAGE_NOT_SET);
         }
         return primaryStorageService;
     }
@@ -284,7 +352,7 @@ public class StorageServiceFactory {
      */
     public void reloadStorageService(String name, StorageConfig newConfig) {
         if (!storageServices.containsKey(name)) {
-            throw new IllegalArgumentException("存储服务不存在: " + name);
+            throw new BusinessException(ErrorCode.STORAGE_SERVICE_NOT_FOUND, name);
         }
 
         // 移除旧服务

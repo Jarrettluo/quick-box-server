@@ -78,11 +78,6 @@ public class StorageConfig {
     private WebDAVConfig webdavConfig;
 
     /**
-     * NAS配置
-     */
-    private NASConfig nasConfig;
-
-    /**
      * 健康检查配置
      */
     private HealthCheckConfig healthCheckConfig = new HealthCheckConfig();
@@ -127,21 +122,6 @@ public class StorageConfig {
         private String basePath = "/";
         private boolean useSSL = false;
         private boolean validateSSL = true;
-    }
-
-    /**
-     * NAS配置
-     */
-    @Data
-    public static class NASConfig {
-        private String type; // "nfs" or "smb"
-        private String server;
-        private String sharePath;
-        private String mountPoint;
-        private String username;
-        private String password;
-        private String domain;
-        private boolean autoMount = true;
     }
 
     /**

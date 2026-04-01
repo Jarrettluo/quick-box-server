@@ -1,171 +1,153 @@
 # 生产环境配置
 server:
-  port: 8080
+  port: 8080                         # 生产服务端口
   servlet:
-    context-path: /
+    context-path: /                  # 上下文路径
   tomcat:
-    max-swallow-size: -1
+    max-swallow-size: -1            # 允许无限制请求体
     threads:
-      max: 200
-      min-spare: 20
-    accept-count: 100
-    max-connections: 10000
+      max: 200                       # 最大线程数
+      min-spare: 20                  # 最小空闲线程数
+    accept-count: 100                # 等待队列长度
+    max-connections: 10000           # 最大连接数
 
 spring:
   application:
     name: quick-box-server
+  # 文件上传配置
   servlet:
     multipart:
-      max-file-size: 100MB
-      max-request-size: 100MB
-      enabled: true
-      file-size-threshold: 2KB
-      location: /tmp
+      max-file-size: 100MB           # 单个文件最大100MB
+      max-request-size: 100MB        # 请求体最大100MB
+      enabled: true                  # 启用分段上传
+      file-size-threshold: 2KB      # 超过2KB则写入磁盘
+      location: /tmp                 # 临时文件目录
+  # Redis 数据源配置（Spring Boot 3.x 推荐写法）
   data:
     redis:
-      host: ${REDIS_HOST:redis}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      database: 0
-      timeout: 10000ms
+      host: ${REDIS_HOST:redis}      # Redis 主机（环境变量或默认 redis）
+      port: ${REDIS_PORT:6379}       # Redis 端口
+      password: ${REDIS_PASSWORD:}   # Redis 密码
+      database: 0                    # 数据库编号
+      timeout: 10000ms              # 连接超时
       lettuce:
         pool:
-          max-active: 20
-          max-idle: 10
-          min-idle: 5
-          max-wait: -1ms
+          max-active: 20             # 最大连接数
+          max-idle: 10              # 最大空闲连接
+          min-idle: 5               # 最小空闲连接
+          max-wait: -1ms            # 最大等待时间
+  # Redis 缓存配置
   cache:
     type: redis
     redis:
-      time-to-live: 600000
-      cache-null-values: false
-      key-prefix: "quickbox:"
+      time-to-live: 600000          # 缓存过期时间 10分钟
+      cache-null-values: false      # 不缓存 null 值
+      key-prefix: "quickbox:"       # 缓存键前缀
 
-redis:
-  host: ${REDIS_HOST:redis}
-  port: ${REDIS_PORT:6379}
-  password: ${REDIS_PASSWORD:}
-  database: 0
-  timeout: 10000
-  pool:
-    max-active: 20
-    max-wait: -1ms
-    max-idle: 10
-    min-idle: 5
-
+# 文件存储配置
 file:
   storage:
-    base-path: ${FILE_STORAGE_BASE_PATH:/data/storage}
-    chunks-path: ${file.storage.base-path}/chunks
-    final-path: ${file.storage.base-path}/files
-    create-directories: true
-    max-file-size: 100MB
-    max-folder-size: 10GB
-    max-folder-files: 1000
+    base-path: ${FILE_STORAGE_BASE_PATH:/data/storage}  # 基础存储路径
+    chunks-path: chunks            # 分片存储目录
+    final-path: files              # 最终文件存储目录
+    create-directories: true       # 自动创建目录
+    max-file-size: 100MB           # 单文件最大100MB
+    max-folder-size: 10GB          # 文件夹最大10GB
+    max-folder-files: 1000         # 文件夹最大文件数
     cleanup:
-      enabled: true
-      cron: "0 0 3 * * *"
-      expire-days: 7
+      enabled: true                # 启用清理
+      cron: "0 0 3 * * *"         # 每天凌晨3点执行
+      expire-days: 7              # 7天后自动删除
 
+# ============================================================
+# 存储配置
+# type: local 或 s3
+# ============================================================
 storage:
-  strategy:
-    type: ${STORAGE_STRATEGY_TYPE:PRIMARY_BACKUP}
-  primary:
-    backend: ${STORAGE_PRIMARY_BACKEND:local}
-  backup:
-    backends: ${STORAGE_BACKUP_BACKENDS:}
-  load-balance:
-    algorithm: ROUND_ROBIN
-  health-check:
-    enabled: true
-    interval: 30000
-  auto-failover:
-    enabled: true
-    threshold: 3
+  type: ${STORAGE_TYPE:local}      # 存储类型：local（本地）或 s3
+  # 本地存储配置（当 type=local 时生效）
   local:
-    default:
-      name: default-local
-      enabled: true
-      primary: true
-      priority: 1
-      base-path: ${file.storage.base-path}
-      chunk-path: ${file.storage.chunks-path}
-      file-path: ${file.storage.final-path}
-      create-directories: true
-      use-temp-files: true
-      temp-file-prefix: quickbox_
+    base-path: ${FILE_STORAGE_BASE_PATH:/data/storage}  # 基础存储路径
+    chunks-path: chunks            # 分片目录
+    final-path: files             # 最终文件目录
+    create-directories: true       # 自动创建目录
+    use-temp-files: true          # 使用临时文件
+    temp-file-prefix: quickbox_    # 临时文件前缀
+  # S3 存储配置（当 type=s3 时生效）
   s3:
-    default:
-      name: default-s3
-      enabled: ${S3_ENABLED:false}
-      primary: false
-      priority: 10
-      endpoint: ${S3_ENDPOINT:http://minio:9000}
-      region: ${S3_REGION:us-east-1}
-      access-key: ${S3_ACCESS_KEY:}
-      secret-key: ${S3_SECRET_KEY:}
-      bucket-name: ${S3_BUCKET_NAME:quickbox-files}
-      path-style-access: true
-      use-ssl: false
-      prefix: uploads
-      part-size: 5242880
+    enabled: ${S3_ENABLED:false} # 是否启用 S3
+    endpoint: ${S3_ENDPOINT:http://minio:9000}  # S3/MinIO 端点
+    region: ${S3_REGION:us-east-1}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    bucket-name: ${S3_BUCKET_NAME:quickbox-files}
+    path-style-access: true       # 启用路径风格访问
+    use-ssl: false
+    prefix: uploads                # 对象键前缀
+    part-size: 5242880            # 分片大小 5MB
 
+# 监控与健康检查端点
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info,metrics,prometheus  # 暴露的端点
   endpoint:
     health:
-      show-details: always
+      show-details: always         # 健康检查详情
   metrics:
     export:
       prometheus:
-        enabled: true
+        enabled: true               # 启用 Prometheus 导出
     distribution:
       percentiles-histogram:
         http:
           server:
-            requests: true
+            requests: true          # HTTP 请求延迟分布
 
+# 日志配置
 logging:
   file:
-    name: /data/logs/application.log
-    max-size: 10MB
-    max-history: 30
+    name: /data/logs/application.log  # 日志文件路径
+    max-size: 10MB                   # 单个日志文件最大10MB
+    max-history: 30                  # 保留30天日志
   level:
-    com.jiaruiblog.quickboxserver: INFO
-    org.springframework.web: WARN
-    org.hibernate: WARN
+    com.jiaruiblog.quickboxserver: INFO  # 应用日志级别
+    org.springframework.web: WARN    # Spring Web 日志
+    org.hibernate: WARN              # Hibernate 日志
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
+# 安全配置
 security:
   basic:
-    enabled: false
+    enabled: false                   # 禁用基础认证
 
+# 跨域配置
 cors:
-  allowed-origins: "*"
+  allowed-origins: "*"             # 允许所有来源（生产环境应限制）
   allowed-methods: GET,POST,PUT,DELETE,OPTIONS
   allowed-headers: "*"
   allow-credentials: true
 
+# 上传会话配置
 upload:
-  max-concurrent-sessions: 100
-  max-chunk-size: 5242880
-  max-retry-attempts: 3
-  retry-delay: 1000
-  session-timeout: 86400
-  cleanup-interval: 3600
+  max-concurrent-sessions: 100     # 最大并发会话数
+  max-chunk-size: 5242880         # 分片大小 5MB
+  max-retry-attempts: 3            # 最大重试次数
+  retry-delay: 1000                # 重试间隔(ms)
+  session-timeout: 86400            # 会话超时 24小时
+  cleanup-interval: 3600           # 清理间隔 1小时
 
+# 文件夹上传配置
 folder:
   upload:
-    enabled: true
-    max-depth: 10
-    max-total-size: 10737418240
-    max-files: 1000
-    auto-zip: true
-    keep-structure: true
-    zip-compression-level: 5
-    zip-buffer-size: 8192
+    enabled: true                  # 启用文件夹上传
+    max-depth: 10                  # 最大目录深度
+    max-total-size: 10737418240    # 单次上传最大 10GB
+    max-files: 1000                # 单次上传最大文件数
+    auto-zip: true                 # 自动压缩
+    keep-structure: true           # 保持目录结构
+    zip-compression-level: 5       # 压缩级别 (1-9)
+    zip-buffer-size: 8192           # 压缩缓冲区大小

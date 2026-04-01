@@ -1,10 +1,17 @@
 package com.jiaruiblog.quickboxserver.storage.impl;
 
-import com.jiaruiblog.quickboxserver.storage.model.*;
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
+import com.jiaruiblog.quickboxserver.storage.model.FileInfo;
+import com.jiaruiblog.quickboxserver.storage.model.FolderInfo;
+import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
+import com.jiaruiblog.quickboxserver.storage.model.StorageHealth;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 
 import java.io.*;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
@@ -15,7 +22,6 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 /**
@@ -38,7 +44,7 @@ public class LocalFileStorageService extends AbstractStorageService {
 
         StorageConfig.LocalConfig localConfig = config.getLocalConfig();
         if (localConfig == null) {
-            throw new IllegalArgumentException("本地存储配置不能为空");
+            throw new BusinessException(ErrorCode.STORAGE_CONFIG_EMPTY);
         }
 
         this.basePath = Paths.get(localConfig.getBasePath()).toAbsolutePath();
@@ -72,7 +78,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             log.info("创建存储目录成功");
         } catch (IOException e) {
             log.error("创建存储目录失败", e);
-            throw new RuntimeException("无法创建存储目录", e);
+            throw new BusinessException(ErrorCode.LOCAL_DIRECTORY_CREATE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -82,8 +88,10 @@ public class LocalFileStorageService extends AbstractStorageService {
     public String initFileUpload(String fileId, String fileName, long fileSize, Map<String, Object> metadata) {
         validateFilePath(fileId);
 
-        String sessionId = UUID.randomUUID().toString();
+        String sessionId = (fileId != null && !fileId.isEmpty()) ? fileId : UUID.randomUUID().toString();
         Path sessionDir = chunkPath.resolve(sessionId);
+
+        log.debug("session dir: {}", sessionDir);
 
         try {
             Files.createDirectories(sessionDir);
@@ -116,7 +124,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return sessionId;
         } catch (IOException e) {
             log.error("初始化文件上传失败", e);
-            throw new RuntimeException("初始化文件上传失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_UPLOAD_INIT_FAILED, e.getMessage(), e);
         }
     }
 
@@ -126,7 +134,8 @@ public class LocalFileStorageService extends AbstractStorageService {
 
         UploadSession session = uploadSessions.get(sessionId);
         Path chunkFile = chunkPath.resolve(sessionId).resolve(String.valueOf(chunkNumber));
-
+        log.debug("上传的时候chunkPath是：{}", chunkPath);
+        log.debug("分片的上传路径是：{}", chunkFile.toAbsolutePath().toString());
         try {
             // 使用文件锁确保并发安全
             ReentrantLock lock = fileLocks.computeIfAbsent(sessionId, k -> new ReentrantLock());
@@ -134,8 +143,8 @@ public class LocalFileStorageService extends AbstractStorageService {
 
             try {
                 // 检查分片是否已上传
-                if (session.getUploadedChunks().contains(chunkNumber)) {
-                    log.debug("分片已上传: {} - {}", sessionId, chunkNumber);
+                if (session.getUploadedChunks().contains(String.valueOf(chunkNumber))) {
+                    log.debug("当前正在传的分片已上传: {} - {}", sessionId, chunkNumber);
                     return;
                 }
 
@@ -143,12 +152,12 @@ public class LocalFileStorageService extends AbstractStorageService {
                 Files.copy(chunkData, chunkFile, StandardCopyOption.REPLACE_EXISTING);
 
                 // 更新会话状态
-                session.getUploadedChunks().add(chunkNumber);
+                session.getUploadedChunks().add(String.valueOf(chunkNumber));
                 session.setChunkCount(session.getChunkCount() + 1);
                 session.setUploadedSize(session.getUploadedSize() + chunkSize);
                 session.setLastUpdateTime(LocalDateTime.now());
 
-                log.debug("上传文件分片成功: {} - {} ({} bytes)", sessionId, chunkNumber, chunkSize);
+                log.info("上传文件分片成功: {} - {} ({} bytes)", sessionId, chunkNumber, chunkSize);
 
                 // 触发事件
                 FileInfo fileInfo = createFileInfoFromSession(session);
@@ -158,10 +167,15 @@ public class LocalFileStorageService extends AbstractStorageService {
             }
         } catch (IOException e) {
             log.error("上传文件分片失败", e);
-            throw new RuntimeException("上传文件分片失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_CHUNK_UPLOAD_FAILED, e.getMessage(), e);
         }
     }
 
+    /***
+     * <p>合并分片？</p>
+     * @param sessionId
+     * @return java.lang.String
+     **/
     @Override
     public String mergeFileChunks(String sessionId) {
         validateUploadSession(sessionId);
@@ -188,7 +202,7 @@ public class LocalFileStorageService extends AbstractStorageService {
 
             // 验证分片完整性
             if (chunkFiles.size() != session.getUploadedChunks().size()) {
-                throw new IllegalStateException("分片数量不匹配");
+                throw new BusinessException(ErrorCode.CHUNK_COUNT_MISMATCH);
             }
 
             // 合并分片
@@ -207,7 +221,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             // 验证文件大小
             long actualSize = Files.size(finalFile);
             if (actualSize != session.getFileSize()) {
-                throw new IllegalStateException(String.format("文件大小不匹配: 期望 %d, 实际 %d", session.getFileSize(), actualSize));
+                throw new BusinessException(ErrorCode.FILE_SIZE_MISMATCH, new Object[]{session.getFileSize(), actualSize});
             }
 
             // 清理分片文件
@@ -228,7 +242,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return filePathStr;
         } catch (IOException e) {
             log.error("合并文件分片失败", e);
-            throw new RuntimeException("合并文件分片失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_MERGE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -284,7 +298,7 @@ public class LocalFileStorageService extends AbstractStorageService {
         } catch (IOException e) {
             log.error("下载文件失败", e);
             fireFileDownloadFailed(createBasicFileInfo(filePath), e.getMessage());
-            throw new RuntimeException("下载文件失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_DOWNLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -309,8 +323,23 @@ public class LocalFileStorageService extends AbstractStorageService {
             fireFileDeleted(fileInfo);
         } catch (IOException e) {
             log.error("删除文件失败", e);
-            throw new RuntimeException("删除文件失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_DELETE_FAILED, e.getMessage(), e);
         }
+    }
+
+    @Override
+    public Map<String, Object> getSessionInfo(String sessionId) {
+        UploadSession session = uploadSessions.get(sessionId);
+        if (session == null) {
+            return null;
+        }
+        Map<String, Object> info = new HashMap<>();
+        info.put("uploadedChunks", session.getUploadedChunks());
+        info.put("fileName", session.getFileName());
+        info.put("fileSize", session.getFileSize());
+        info.put("chunkCount", session.getChunkCount());
+        info.put("uploadedSize", session.getUploadedSize());
+        return info;
     }
 
     @Override
@@ -363,7 +392,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return fileInfo;
         } catch (IOException e) {
             log.error("获取文件信息失败", e);
-            throw new RuntimeException("获取文件信息失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FILE_INFO_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -380,8 +409,8 @@ public class LocalFileStorageService extends AbstractStorageService {
     public String initFolderUpload(String folderId, String folderName, int totalFiles, long totalSize, String structureJson) {
         validateFolderPath(folderId);
 
-        String sessionId = UUID.randomUUID().toString();
-        Path sessionDir = chunkPath.resolve(sessionId);
+        // 使用传入的 folderId（实际上是 accessCode）作为存储文件夹名
+        Path sessionDir = chunkPath.resolve(folderId);
 
         try {
             Files.createDirectories(sessionDir);
@@ -399,67 +428,289 @@ public class LocalFileStorageService extends AbstractStorageService {
             String metadataJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(sessionMetadata);
             Files.writeString(sessionDir.resolve("metadata.json"), metadataJson);
 
+            // 创建并保存上传会话
+            UploadSession session = new UploadSession();
+            session.setSessionId(folderId);
+            session.setFileId(folderId);
+            session.setFileName(folderName);
+            session.setFileSize(totalSize);
+            session.setCreateTime(LocalDateTime.now());
+            session.setChunkCount(0);
+            session.setUploadedChunks(new HashSet<>());
+
+            // 保存到上传会话列表
+            uploadSessions.put(folderId, session);
+
             log.info("初始化文件夹上传会话: {} -> {} ({} files, {} bytes)",
-                sessionId, folderName, totalFiles, totalSize);
-            return sessionId;
+                folderId, folderName, totalFiles, totalSize);
+            return folderId;
         } catch (IOException e) {
             log.error("初始化文件夹上传失败", e);
-            throw new RuntimeException("初始化文件夹上传失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_UPLOAD_INIT_FAILED, e.getMessage(), e);
         }
     }
 
     @Override
-    public void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize) {
-        // 文件夹上传使用ZIP格式，处理方式与文件相同
-        uploadFileChunk(sessionId, chunkNumber, chunkData, chunkSize);
+    public void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize,
+                                  String relativePath, String filename) {
+        validateUploadSession(sessionId);
+
+        // 编码文件名：relativePath="a/b", filename="c.txt", chunkNumber=1 -> "a_b__c.txt_1"
+        String encodedFileName = encodeChunkFileName(relativePath, filename, chunkNumber);
+        Path chunkFile = chunkPath.resolve(sessionId).resolve(encodedFileName);
+
+        log.info("文件夹分片上传: session={}, chunk={}, path={}, file={}, 编码后文件名={}",
+                 sessionId, chunkNumber, relativePath, filename, encodedFileName);
+
+        try {
+            ReentrantLock lock = fileLocks.computeIfAbsent(sessionId, k -> new ReentrantLock());
+            lock.lock();
+
+            try {
+                // 检查分片是否已上传
+                UploadSession session = uploadSessions.get(sessionId);
+                if (session.getUploadedChunks().contains(encodeChunkFileName(relativePath, filename, chunkNumber))) {
+                    log.info("当前分片已上传: {} - {} ({})", sessionId, chunkNumber, encodedFileName);
+                    return;
+                }
+
+                // 保存分片文件
+                Files.copy(chunkData, chunkFile, StandardCopyOption.REPLACE_EXISTING);
+
+                // 更新会话状态
+                session.getUploadedChunks().add(encodeChunkFileName(relativePath, filename, chunkNumber));
+                session.setUploadedSize(session.getUploadedSize() + chunkSize);
+                session.setLastUpdateTime(LocalDateTime.now());
+
+                log.info("文件夹分片上传成功: {} - {} ({} bytes)", sessionId, chunkNumber, chunkSize);
+            } finally {
+                lock.unlock();
+            }
+        } catch (IOException e) {
+            log.error("文件夹分片上传失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_CHUNK_UPLOAD_FAILED, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public boolean folderChunkExists(String sessionId, int chunkNumber, String relativePath, String filename) {
+        try {
+            String encodedFileName = encodeChunkFileName(relativePath, filename, chunkNumber);
+            Path chunkFile = chunkPath.resolve(sessionId).resolve(encodedFileName);
+            boolean exists = Files.exists(chunkFile);
+            log.debug("检查文件夹分片是否存在: {} - {} -> {}", sessionId, encodedFileName, exists);
+            return exists;
+        } catch (Exception e) {
+            log.error("检查文件夹分片是否存在失败", e);
+            return false;
+        }
+    }
+
+    /**
+     * 编码：将 relativePath 和 filename 编码为 chunk 文件名
+     * 使用Base64编码relativePath以避免下划线混淆问题
+     * @param relativePath 相对路径 (可为 null 或空)
+     * @param filename 文件名
+     * @param chunkNumber 分片号
+     * @return 编码后的文件名，如 "bXlXZm9sZGVyL3N1YmRpcg==||c.txt_1" 或 "_||c.txt_1" (空路径时)
+     */
+    public static String encodeChunkFileName(String relativePath, String filename, int chunkNumber) {
+        String encodedPath;
+        if (relativePath == null || relativePath.isEmpty()) {
+            encodedPath = "_";
+        } else {
+            // 如果relativePath包含URL编码字符（如%2F），先解码
+            String pathToEncode = relativePath;
+            if (relativePath.contains("%")) {
+                try {
+                    pathToEncode = URLDecoder.decode(relativePath, StandardCharsets.UTF_8);
+                } catch (Exception e) {
+                    pathToEncode = relativePath;
+                }
+            }
+            // 使用URL-safe Base64编码relativePath，避免下划线混淆
+            encodedPath = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(pathToEncode.getBytes(StandardCharsets.UTF_8));
+        }
+        // 使用 "__" 作为编码路径和文件名的分隔符（避免Windows非法字符 | ），"_" 作为分片号分隔符
+        return encodedPath + "__" + filename + "_" + chunkNumber;
+    }
+
+    /**
+     * 解码：从 chunk 文件名还原 relativePath 和 filename
+     * @param encodedFileName 编码后的文件名，如 "bXlXZm9sZGVyL3N1YmRpcg==__c.txt_1"
+     * @return String[3] = [relativePath, filename, chunkNumberStr]
+     */
+    public static String[] decodeChunkFileName(String encodedFileName) {
+        // 找到最后一个下划线（分片号分隔符）
+        int lastUnderscore = encodedFileName.lastIndexOf('_');
+        String pathAndFile = encodedFileName.substring(0, lastUnderscore);
+        String chunkNumberStr = encodedFileName.substring(lastUnderscore + 1);
+
+        // 找到双下划线（路径和文件名分隔符）
+        int doubleUnderscore = pathAndFile.indexOf("__");
+        if (doubleUnderscore == -1) {
+            throw new BusinessException(ErrorCode.INVALID_CHUNK_FILENAME_FORMAT, encodedFileName);
+        }
+
+        String encodedPath = pathAndFile.substring(0, doubleUnderscore);
+        String filename = pathAndFile.substring(doubleUnderscore + 2);
+
+        // 解码relativePath：空路径标记还原为空字符串，Base64编码的路径进行解码
+        String relativePath;
+        if ("_".equals(encodedPath)) {
+            relativePath = "";
+        } else {
+            relativePath = new String(Base64.getUrlDecoder().decode(encodedPath), StandardCharsets.UTF_8);
+        }
+
+        return new String[]{relativePath, filename, chunkNumberStr};
     }
 
     @Override
     public String mergeFolderChunks(String sessionId) {
+        log.info("开始合并文件夹分片: sessionId={}", sessionId);
+        validateUploadSession(sessionId);
+
         Path sessionDir = chunkPath.resolve(sessionId);
         Path metadataFile = sessionDir.resolve("metadata.json");
 
         try {
             // 读取文件夹元数据
             String metadataJson = Files.readString(metadataFile);
+            log.info("文件夹元数据: {}", metadataJson);
+
             Map<String, Object> metadata = new com.fasterxml.jackson.databind.ObjectMapper().readValue(metadataJson, Map.class);
 
             String folderId = (String) metadata.get("folderId");
             String folderName = (String) metadata.get("folderName");
+            // finalFolder 是最终文件夹的根目录，即 filePath/folderId/folderName
             Path finalFolder = filePath.resolve(folderId).resolve(folderName);
 
             // 创建目标文件夹
             Files.createDirectories(finalFolder);
 
-            // 合并ZIP文件
-            Path zipFile = sessionDir.resolve("folder.zip");
-            try (OutputStream outputStream = Files.newOutputStream(zipFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
-                // 获取所有分片文件并按序号排序
-                List<Path> chunkFiles;
-                try (Stream<Path> stream = Files.list(sessionDir)) {
-                    chunkFiles = stream
-                        .filter(path -> {
-                            String fileName = path.getFileName().toString();
-                            return !fileName.equals("metadata.json") && !fileName.equals("folder.zip") && fileName.matches("\\d+");
-                        })
-                        .sorted(Comparator.comparingInt(path -> Integer.parseInt(path.getFileName().toString())))
-                        .collect(Collectors.toList());
-                }
-
-                // 合并分片
-                for (Path chunkFile : chunkFiles) {
-                    try (InputStream inputStream = Files.newInputStream(chunkFile)) {
-                        byte[] buffer = new byte[8192];
-                        int bytesRead;
-                        while ((bytesRead = inputStream.read(buffer)) != -1) {
-                            outputStream.write(buffer, 0, bytesRead);
-                        }
-                    }
-                }
+            // 获取所有分片文件（新的命名格式包含双下划线）
+            List<Path> chunkFiles;
+            try (Stream<Path> stream = Files.list(sessionDir)) {
+                chunkFiles = stream
+                    .filter(path -> {
+                        String fn = path.getFileName().toString();
+                        return !fn.equals("metadata.json") && fn.contains("__");
+                    })
+                    .collect(Collectors.toList());
             }
 
-            // 解压ZIP文件
-            extractZipFile(zipFile, finalFolder);
+            log.info("找到 {} 个分片文件待合并", chunkFiles.size());
+
+            // 按文件名分组，同一个文件的分片放在一起
+            Map<String, List<Path>> fileChunksMap = new HashMap<>();
+            for (Path chunkFile : chunkFiles) {
+                String encodedName = chunkFile.getFileName().toString();
+                // 去掉 chunkNumber 获取文件的唯一标识
+                int lastUnderscore = encodedName.lastIndexOf('_');
+                String fileKey = encodedName.substring(0, lastUnderscore);
+                fileChunksMap.computeIfAbsent(fileKey, k -> new ArrayList<>()).add(chunkFile);
+            }
+
+            // 合并每个文件的分片
+            int mergedFiles = 0;
+            for (Map.Entry<String, List<Path>> entry : fileChunksMap.entrySet()) {
+                String fileKey = entry.getKey();
+                List<Path> chunks = entry.getValue();
+
+                // 解码获取 relativePath 和 filename
+                String[] decoded = decodeChunkFileName(fileKey + "_1"); // 加个后缀用于解码
+                String relativePath = decoded[0];
+                String filename = decoded[1];
+
+                // 构建目标文件路径
+                // vue-simple-uploader 的 relativePath 是相对于上传根目录（folderName）的路径
+                // 例如: folderName = "大型文件夹", relativePath = "大型文件夹/一层文件夹/..."
+                // relativePath 可能包含 folderName，也可能不包含
+                // 目标路径应该是 filePath/folderId/folderName/（relativePath去掉folderName后的部分）
+                Path targetDir = finalFolder;
+                if (relativePath != null && !relativePath.isEmpty()) {
+                    // 从 relativePath 中分离出目录部分（去掉文件名）
+                    String relativePathDir = relativePath;
+                    if (relativePath.endsWith(filename)) {
+                        relativePathDir = relativePath.substring(0, relativePath.length() - filename.length());
+                    }
+                    // 去掉末尾的 "/"（如果有）
+                    if (relativePathDir.endsWith("/")) {
+                        relativePathDir = relativePathDir.substring(0, relativePathDir.length() - 1);
+                    }
+
+                    if (!relativePathDir.isEmpty()) {
+                        // 检查 relativePathDir 是否等于 folderName（relativePath 不包含子目录）
+                        if (relativePathDir.equals(folderName)) {
+                            // relativePathDir 就是 folderName，文件直接在 finalFolder 下
+                            targetDir = finalFolder;
+                        } else if (relativePathDir.startsWith(folderName + "/")) {
+                            // relativePath 包含 folderName 作为前缀，去掉它得到子目录
+                            String subPath = relativePathDir.substring(folderName.length() + 1);
+                            if (!subPath.isEmpty()) {
+                                targetDir = finalFolder.resolve(subPath);
+                            }
+                        } else {
+                            // relativePath 不包含 folderName（vue-simple-uploader 可能没有传递完整路径）
+                            // 这种情况下，relativePath 本身就应该作为子目录
+                            targetDir = finalFolder.resolve(relativePathDir);
+                        }
+                    } else {
+                        // relativePathDir 为空，说明 relativePath 只有文件名，文件直接在 finalFolder 下
+                        targetDir = finalFolder;
+                    }
+                } else {
+                    // relativePath 为空，文件直接在 finalFolder 下
+                    targetDir = finalFolder;
+                }
+                Files.createDirectories(targetDir);
+                Path targetFile = targetDir.resolve(filename);
+
+                // 按分片号排序并合并
+                List<Path> sortedChunks = chunks.stream()
+                    .sorted(Comparator.comparingInt(p -> {
+                        String fn = p.getFileName().toString();
+                        return Integer.parseInt(fn.substring(fn.lastIndexOf('_') + 1));
+                    }))
+                    .collect(Collectors.toList());
+
+                try (OutputStream outputStream = Files.newOutputStream(targetFile,
+                        StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+                    for (Path chunkFile : sortedChunks) {
+                        try (InputStream inputStream = Files.newInputStream(chunkFile)) {
+                            byte[] buffer = new byte[8192];
+                            int bytesRead;
+                            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                                outputStream.write(buffer, 0, bytesRead);
+                            }
+                        }
+                        // 清理分片文件
+                        Files.deleteIfExists(chunkFile);
+                    }
+                }
+
+                mergedFiles++;
+                log.info("合并文件完成: {} -> {}", relativePath + "/" + filename, targetFile);
+            }
+
+            // 递归删除 sessionDir 及其所有子目录和文件
+            if (Files.exists(sessionDir)) {
+                Files.walkFileTree(sessionDir, new SimpleFileVisitor<>() {
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                        Files.delete(file);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                        Files.delete(dir);
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+            }
 
             // 保存文件夹结构信息
             String structureJson = (String) metadata.get("structureJson");
@@ -468,21 +719,23 @@ public class LocalFileStorageService extends AbstractStorageService {
             }
 
             // 保存完整元数据
-            metadata.put("extractTime", LocalDateTime.now().toString());
+            metadata.put("mergeTime", LocalDateTime.now().toString());
             metadata.put("folderPath", finalFolder.toString());
+            metadata.put("mergedFiles", mergedFiles);
             String updatedMetadataJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(metadata);
             Files.writeString(finalFolder.resolve("metadata.json"), updatedMetadataJson);
 
-            // 清理分片文件
-            cleanupChunkFiles(sessionId);
+            // 清理上传会话
+            uploadSessions.remove(sessionId);
+            fileLocks.remove(sessionId);
 
             String folderPathStr = finalFolder.toString();
-            log.info("合并文件夹分片成功: {} -> {} ({} files)", sessionId, folderPathStr, metadata.get("totalFiles"));
+            log.info("合并文件夹分片成功: {} -> {} ({} files)", sessionId, folderPathStr, mergedFiles);
 
             return folderPathStr;
         } catch (IOException e) {
             log.error("合并文件夹分片失败", e);
-            throw new RuntimeException("合并文件夹分片失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_MERGE_FAILED, e.getMessage(), e);
         }
     }
 
@@ -514,7 +767,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             };
         } catch (IOException e) {
             log.error("下载文件夹为ZIP失败", e);
-            throw new RuntimeException("下载文件夹为ZIP失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_DOWNLOAD_FAILED, e.getMessage(), e);
         }
     }
 
@@ -548,6 +801,9 @@ public class LocalFileStorageService extends AbstractStorageService {
                     if (metadata.containsKey("accessCode")) {
                         folderInfo.setAccessCode((String) metadata.get("accessCode"));
                     }
+                    if (metadata.containsKey("folderName")) {
+                        folderInfo.setFolderName((String) metadata.get("folderName"));
+                    }
                     if (metadata.containsKey("createTime")) {
                         folderInfo.setCreateTime(LocalDateTime.parse((String) metadata.get("createTime")));
                     }
@@ -575,7 +831,7 @@ public class LocalFileStorageService extends AbstractStorageService {
             return folderInfo;
         } catch (IOException e) {
             log.error("获取文件夹信息失败", e);
-            throw new RuntimeException("获取文件夹信息失败", e);
+            throw new BusinessException(ErrorCode.LOCAL_FOLDER_INFO_GET_FAILED, e.getMessage(), e);
         }
     }
 
@@ -707,7 +963,7 @@ public class LocalFileStorageService extends AbstractStorageService {
 
     private void validateUploadSession(String sessionId) {
         if (!uploadSessions.containsKey(sessionId)) {
-            throw new IllegalArgumentException("上传会话不存在: " + sessionId);
+            throw new BusinessException(ErrorCode.UPLOAD_SESSION_NOT_EXISTS, sessionId);
         }
     }
 
@@ -814,24 +1070,6 @@ public class LocalFileStorageService extends AbstractStorageService {
         }
     }
 
-    private void extractZipFile(Path zipFile, Path targetDir) throws IOException {
-        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipFile))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                Path entryPath = targetDir.resolve(entry.getName());
-
-                if (entry.isDirectory()) {
-                    Files.createDirectories(entryPath);
-                } else {
-                    Files.createDirectories(entryPath.getParent());
-                    Files.copy(zis, entryPath, StandardCopyOption.REPLACE_EXISTING);
-                }
-
-                zis.closeEntry();
-            }
-        }
-    }
-
     private void zipDirectory(Path sourceDir, Path currentDir, ZipOutputStream zos) throws IOException {
         try (Stream<Path> stream = Files.list(currentDir)) {
             for (Path path : stream.collect(Collectors.toList())) {
@@ -844,6 +1082,10 @@ public class LocalFileStorageService extends AbstractStorageService {
                     // 递归处理子目录
                     zipDirectory(sourceDir, path, zos);
                 } else {
+                    // 跳过 metadata.json 文件
+                    if (path.getFileName().toString().equals("metadata.json")) {
+                        continue;
+                    }
                     // 添加文件条目
                     String entryName = sourceDir.relativize(path).toString().replace('\\', '/');
                     zos.putNextEntry(new ZipEntry(entryName));
@@ -959,7 +1201,7 @@ public class LocalFileStorageService extends AbstractStorageService {
         private Map<String, Object> metadata;
         private int chunkCount;
         private long uploadedSize;
-        private Set<Integer> uploadedChunks;
+        private Set<String> uploadedChunks;
 
         // getters and setters
         public String getSessionId() { return sessionId; }
@@ -989,8 +1231,8 @@ public class LocalFileStorageService extends AbstractStorageService {
         public long getUploadedSize() { return uploadedSize; }
         public void setUploadedSize(long uploadedSize) { this.uploadedSize = uploadedSize; }
 
-        public Set<Integer> getUploadedChunks() { return uploadedChunks; }
-        public void setUploadedChunks(Set<Integer> uploadedChunks) { this.uploadedChunks = uploadedChunks; }
+        public Set<String> getUploadedChunks() { return uploadedChunks; }
+        public void setUploadedChunks(Set<String> uploadedChunks) { this.uploadedChunks = uploadedChunks; }
     }
 
     private static class FolderStats {

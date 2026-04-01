@@ -96,6 +96,13 @@ public interface StorageService {
      */
     boolean fileExists(String filePath);
 
+    /**
+     * 获取文件上传会话信息
+     * @param sessionId 上传会话ID（即 accessCode）
+     * @return 会话信息，包含已上传分片列表、文件名、文件大小等
+     */
+    Map<String, Object> getSessionInfo(String sessionId);
+
     // ==================== 文件夹操作 ====================
 
     /**
@@ -110,13 +117,26 @@ public interface StorageService {
     String initFolderUpload(String folderId, String folderName, int totalFiles, long totalSize, String structureJson);
 
     /**
-     * 上传文件夹分片（ZIP格式）
+     * 上传文件夹分片（保持目录结构）
      * @param sessionId 上传会话ID
      * @param chunkNumber 分片序号
      * @param chunkData 分片数据流
      * @param chunkSize 分片大小
+     * @param relativePath 相对路径（如 "a/b/b"）
+     * @param filename 文件名（如 "c.txt"）
      */
-    void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize);
+    void uploadFolderChunk(String sessionId, int chunkNumber, InputStream chunkData, long chunkSize,
+                          String relativePath, String filename);
+
+    /**
+     * 检查文件夹分片是否存在（用于 testChunks 功能）
+     * @param sessionId 上传会话ID
+     * @param chunkNumber 分片序号
+     * @param relativePath 相对路径
+     * @param filename 文件名
+     * @return 是否已上传
+     */
+    boolean folderChunkExists(String sessionId, int chunkNumber, String relativePath, String filename);
 
     /**
      * 合并文件夹分片并解压
@@ -131,14 +151,6 @@ public interface StorageService {
      * @return ZIP数据流
      */
     InputStream downloadFolderAsZip(String folderPath);
-
-    /**
-     * 下载文件夹中的单个文件
-     * @param folderPath 文件夹路径
-     * @param relativePath 相对路径
-     * @return 文件数据流
-     */
-    InputStream downloadFolderFile(String folderPath, String relativePath);
 
     /**
      * 删除文件夹

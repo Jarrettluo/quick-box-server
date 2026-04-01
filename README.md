@@ -4,7 +4,7 @@ QuickBox（快取柜）后端是一个临时文件共享服务的服务器端实
 
 ## ✨ 功能特性
 
-- **分片上传**：支持大文件分片上传（适配vue-simple-uploader）
+- **分片上传**：支持大文件分片上传（5MB分片，适配前端实现）
 - **文件合并**：自动合并分片文件为完整文件
 - **取件码管理**：生成6位唯一取件码，支持Redis缓存和过期管理
 - **文件下载**：通过取件码下载文件（单次使用）
@@ -15,6 +15,7 @@ QuickBox（快取柜）后端是一个临时文件共享服务的服务器端实
 - **多存储后端支持**：抽象存储层，支持本地文件系统、S3/MinIO对象存储
 - **Docker容器化部署**：完整的容器化部署方案，支持生产环境
 - **存储管理API**：存储后端管理和监控功能
+- **文件验证**：支持文件类型检查和大小限制
 
 ## 🛠️ 技术栈
 
@@ -111,6 +112,11 @@ folder.upload.max-total-size=10GB
 folder.upload.max-files=1000
 folder.upload.auto-zip=true
 folder.upload.keep-structure=true
+
+# 文件验证配置
+file.upload.max-size=50GB
+file.upload.allowed-types=*
+file.upload.blocked-types=application/x-executable,application/x-dosexec
 ```
 
 ### 启动方式
@@ -158,6 +164,7 @@ cd quick-box-server/deploy
    {
      "filename": "example.zip",
      "totalSize": 10485760,
+     "chunkSize": 5242880,
      "totalChunks": 5
    }
    ```
@@ -178,17 +185,17 @@ cd quick-box-server/deploy
    ```
    POST /api/upload/upload
    ```
-   参数：
-   ```json
-   {
-     "uploadId": "ABCDEF",
-     "chunkNumber": 3,
-     "totalChunks": 5,
-     "filename": "example.zip",
-     "totalSize": 10485760,
-     "file": "分片文件"
-   }
-   ```
+   参数（FormData）：
+   - uploadId: 上传会话ID
+   - chunkNumber: 分片序号
+   - chunkSize: 分片大小
+   - currentChunkSize: 当前分片实际大小
+   - totalChunks: 总分片数
+   - totalSize: 文件总大小
+   - filename: 文件名
+   - contentType: 文件类型
+   - file: 分片文件内容
+
    响应：
    ```json
    {
@@ -258,15 +265,60 @@ cd quick-box-server/deploy
    ```
    POST /api/upload/folder/init
    ```
+   请求体：
+   ```json
+   {
+     "folderName": "my_folder",
+     "totalFiles": 5,
+     "totalSize": 10485760,
+     "structureJson": "{\"files\": [...]}",
+     "autoZip": true,
+     "keepStructure": true,
+     "metadata": "{...}"
+   }
+   ```
+   响应：
+   ```json
+   {
+     "code": 200,
+     "message": "success",
+     "data": {
+       "sessionId": "FOLDER123",
+       "folderId": "FOLDER_ABC123",
+       "accessCode": "XYZ789"
+     }
+   }
+   ```
 
 2. **上传文件夹分片**
    ```
    POST /api/upload/folder/chunk
    ```
+   参数（FormData）：
+   - sessionId: 会话ID
+   - chunkNumber: 分片序号
+   - totalChunks: 总分片数
+   - chunkSize: 分片大小
+   - currentChunkSize: 当前分片大小
+   - totalSize: 总大小
+   - identifier: 文件标识符
+   - filename: 文件名
+   - relativePath: 文件相对路径
+   - isZipUpload: 是否为ZIP上传
+   - zipFileIndex: ZIP文件索引
+   - zipTotalChunks: ZIP总分片数
+   - metadata: 元数据
+   - file: 分片文件
 
 3. **合并文件夹分片**
    ```
    POST /api/upload/folder/merge
+   ```
+   参数：
+   ```json
+   {
+     "sessionId": "FOLDER123"
+   }
    ```
 
 4. **获取文件夹信息**
@@ -278,11 +330,17 @@ cd quick-box-server/deploy
    ```
    GET /api/upload/folder/download/{accessCode}
    ```
+   响应：
+   - ZIP压缩包下载
+   - 自动设置Content-Disposition头
+   - 下载后文件夹自动删除
 
 6. **下载文件夹中的文件**
    ```
    GET /api/upload/folder/file/{accessCode}
    ```
+   参数：
+   - path: 文件路径（相对于文件夹根目录）
 
 ### 存储管理API
 
@@ -505,6 +563,13 @@ docker-compose -f docker-compose.prod.yml up -d
 - 验证取件码是否已使用（下载后删除）
 - 检查过期时间设置
 
+#### 5. 文件夹上传失败
+**症状**：文件夹上传过程中失败
+**解决**：
+- 检查文件夹结构是否符合规范
+- 验证文件权限和磁盘空间
+- 查看应用日志中的错误信息
+
 ## 📄 许可证
 
 MIT License - 详见 LICENSE 文件
@@ -547,3 +612,96 @@ MIT License - 详见 LICENSE 文件
 1. 微服务架构改造
 2. 人工智能文件处理
 3. 边缘计算支持
+
+---
+
+## 🐳 Docker 部署方案 (推荐)
+
+### 前置要求
+- Docker
+- Docker Compose
+- Redis 6.0+
+
+### 快速部署
+
+```bash
+# 1. 克隆项目 (使用 develop 分支)
+git clone -b develop https://github.com/Jarrettluo/quick-box-server.git
+cd quick-box-server
+
+# 2. 进入部署目录
+cd deploy
+
+# 3. 复制并配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，配置 Redis 密码等
+
+# 4. 启动服务
+docker-compose up -d
+
+# 5. 查看服务状态
+docker-compose ps
+
+# 6. 查看日志
+docker-compose logs -f
+```
+
+### 端口说明
+| 服务 | 端口 |
+|------|------|
+| 后端 API | 8080 |
+| Redis | 6379 |
+| 前端 Nginx | 80 (可通过 nginx 映射到 8083) |
+
+### 使用外部 Redis
+
+如果使用 Docker Compose 内置 Redis，确保 .env 中配置了 `REDIS_PASSWORD`。
+
+### 自定义配置
+
+修改 `deploy/docker-compose.yml` 中的环境变量：
+- `SPRING_PROFILES_ACTIVE`: 激活的配置 (docker/production)
+- `REDIS_HOST`: Redis 主机地址
+- `REDIS_PORT`: Redis 端口
+- `FILE_STORAGE_BASE_PATH`: 文件存储路径
+
+### 常见命令
+
+```bash
+# 启动所有服务
+docker-compose up -d
+
+# 停止所有服务
+docker-compose down
+
+# 查看日志
+docker-compose logs -f quickbox
+
+# 重启服务
+docker-compose restart quickbox
+
+# 更新并重新构建
+docker-compose build --no-cache quickbox
+docker-compose up -d
+```
+
+### 目录结构
+```
+deploy/
+├── config/              # 配置文件
+│   ├── application-docker.yml
+│   └── application-production.yml
+├── docker/              # Docker 相关
+│   ├── frontend/        # 前端构建
+│   └── nginx/           # Nginx 配置
+├── docker-compose.yml   # 开发环境 compose
+├── docker-compose.prod.yml  # 生产环境 compose
+├── .env.example         # 环境变量示例
+└── Dockerfile           # 后端镜像
+```
+
+### 生产环境建议
+- 使用生产环境 compose: `docker-compose -f docker-compose.prod.yml up -d`
+- 配置 SSL 证书
+- 设置合理的 JVM 内存参数
+- 配置日志持久化

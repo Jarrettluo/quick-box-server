@@ -1,0 +1,100 @@
+# Docker 环境配置
+spring:
+  application:
+    name: quick-box-server
+  profiles:
+    active: docker
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+# 服务器配置
+server:
+  port: 8080
+  servlet:
+    context-path: /
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024
+
+# 文件存储配置
+file:
+  storage:
+    base-path: /app/uploads
+    chunks-directory: chunks
+    files-directory: files
+    temp-directory: temp
+  upload:
+    chunk-size: 5242880  # 5MB
+    max-file-size: 104857600  # 100MB
+
+# Redis 配置
+spring:
+  data:
+    redis:
+      host: redis
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 30000
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1ms
+
+# MinIO 存储配置（可选）
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://minio:9000}
+  accessKey: ${MINIO_ACCESS_KEY:quickbox}
+  secretKey: ${MINIO_SECRET_KEY:quickbox123}
+  bucketName: ${MINIO_BUCKET_NAME:quickbox-files}
+  secure: false
+
+# AWS S3 存储配置（可选）
+aws:
+  s3:
+    endpoint: ${AWS_S3_ENDPOINT:}
+    accessKey: ${AWS_ACCESS_KEY:}
+    secretKey: ${AWS_SECRET_KEY:}
+    bucketName: ${AWS_BUCKET_NAME:}
+    region: ${AWS_REGION:us-east-1}
+
+# 日志配置
+logging:
+  level:
+    com.jiaruiblog.quickboxserver: DEBUG
+    org.springframework: INFO
+  file:
+    name: /app/logs/quick-box-server.log
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Actuator 配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# 应用配置
+app:
+  file:
+    retention-days: 7
+    cleanup-interval-hours: 24
+  access-code:
+    length: 6
+    expiration-hours: 168  # 7天
+  upload:
+    session-expiration-hours: 24
+    max-chunks-per-file: 1000

@@ -1,41 +1,41 @@
 package com.jiaruiblog.quickboxserver.controller;
 
 import com.jiaruiblog.quickboxserver.common.ApiResult;
+import com.jiaruiblog.quickboxserver.model.admin.StorageBackendInfo;
+import com.jiaruiblog.quickboxserver.model.admin.StrategyRequest;
+import com.jiaruiblog.quickboxserver.model.admin.WeightRequest;
 import com.jiaruiblog.quickboxserver.storage.StorageService;
 import com.jiaruiblog.quickboxserver.storage.StorageServiceFactory;
 import com.jiaruiblog.quickboxserver.storage.model.StorageConfig;
 import com.jiaruiblog.quickboxserver.storage.model.StorageHealth;
 import com.jiaruiblog.quickboxserver.storage.model.StorageStats;
 import com.jiaruiblog.quickboxserver.storage.model.StorageUsage;
-import com.jiaruiblog.quickboxserver.storage.strategy.ConfigurableStorageStrategy;
+import com.jiaruiblog.quickboxserver.storage.strategy.StorageStrategy;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.Data;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * 存储管理控制器
  * 提供存储后端的管理和监控API
  */
+@AllArgsConstructor
 @Slf4j
 @RestController
 @RequestMapping("/api/storage")
 @Tag(name = "存储管理", description = "存储后端管理和监控API")
 public class StorageAdminController {
 
-    @Autowired
     private StorageServiceFactory storageServiceFactory;
 
-    @Autowired
-    private ConfigurableStorageStrategy storageStrategy;
+    private StorageStrategy storageStrategy;
 
     @Operation(summary = "获取存储后端列表", description = "获取所有配置的存储后端信息")
     @GetMapping("/backends")
@@ -46,7 +46,7 @@ public class StorageAdminController {
             Map<String, StorageService> allServices = storageServiceFactory.getAllStorageServices();
             List<StorageBackendInfo> backends = allServices.values().stream()
                 .map(this::convertToBackendInfo)
-                .collect(Collectors.toList());
+                .toList();
 
             return ApiResult.success(backends);
         } catch (Exception e) {
@@ -101,45 +101,15 @@ public class StorageAdminController {
         }
     }
 
-    @Operation(summary = "切换存储策略", description = "切换存储策略配置")
+    @Operation(summary = "切换存储策略", description = "切换存储策略配置（当前版本不支持动态切换）")
     @PostMapping("/strategy")
     public ApiResult<String> switchStorageStrategy(
             @Parameter(description = "策略请求") @RequestBody StrategyRequest request) {
-        log.info("切换存储策略: {}", request.getStrategyType());
+        log.info("切换存储策略请求: {}", request.getStrategyType());
 
-        try {
-            // 验证请求
-            if (request.getStrategyType() == null || request.getStrategyType().isEmpty()) {
-                return ApiResult.error(400, "策略类型不能为空");
-            }
-
-            // 更新策略配置
-            Map<String, Object> config = new HashMap<>();
-            config.put("strategy.type", request.getStrategyType());
-
-            if (request.getPrimaryStorageService() != null) {
-                config.put("primary.storage.service", request.getPrimaryStorageService());
-            }
-
-            if (request.getBackupStorageServices() != null) {
-                config.put("backup.storage.services", request.getBackupStorageServices());
-            }
-
-            if (request.getLoadBalanceAlgorithm() != null) {
-                config.put("load.balance.algorithm", request.getLoadBalanceAlgorithm());
-            }
-
-            storageStrategy.updateStrategyConfig(config);
-
-            // 重新加载策略
-            storageStrategy.reloadStrategy();
-
-            log.info("存储策略切换成功: {}", request.getStrategyType());
-            return ApiResult.success("存储策略切换成功");
-        } catch (Exception e) {
-            log.error("切换存储策略失败", e);
-            return ApiResult.error(500, "切换存储策略失败: " + e.getMessage());
-        }
+        // 当前版本不支持动态切换存储策略，配置从 YAML 读取
+        // 如需切换存储类型，请修改配置文件并重启应用
+        return ApiResult.error(400, "当前版本不支持动态切换存储策略，请修改配置文件并重启应用");
     }
 
     @Operation(summary = "获取存储统计信息", description = "获取存储使用统计信息")
@@ -213,20 +183,14 @@ public class StorageAdminController {
         }
     }
 
-    @Operation(summary = "切换主存储服务", description = "切换主存储服务")
+    @Operation(summary = "切换主存储服务", description = "切换主存储服务（当前版本不支持）")
     @PostMapping("/switch-primary")
     public ApiResult<String> switchPrimaryStorageService(
             @Parameter(description = "存储服务名称") @RequestParam String storageServiceName) {
-        log.info("切换主存储服务: {}", storageServiceName);
+        log.info("切换主存储服务请求: {}", storageServiceName);
 
-        try {
-            storageStrategy.switchPrimaryStorageService(storageServiceName);
-            log.info("主存储服务切换成功: {}", storageServiceName);
-            return ApiResult.success("主存储服务切换成功");
-        } catch (Exception e) {
-            log.error("切换主存储服务失败", e);
-            return ApiResult.error(500, "切换主存储服务失败: " + e.getMessage());
-        }
+        // 当前版本不支持动态切换主存储服务
+        return ApiResult.error(400, "当前版本不支持动态切换主存储服务");
     }
 
     @Operation(summary = "重新加载存储服务", description = "重新加载存储服务配置")
@@ -289,20 +253,14 @@ public class StorageAdminController {
         }
     }
 
-    @Operation(summary = "设置存储服务权重", description = "设置存储服务的负载均衡权重")
+    @Operation(summary = "设置存储服务权重", description = "设置存储服务的负载均衡权重（当前版本不支持）")
     @PostMapping("/weight")
     public ApiResult<String> setStorageServiceWeight(
             @Parameter(description = "权重请求") @RequestBody WeightRequest request) {
-        log.info("设置存储服务权重: {} -> {}", request.getStorageServiceName(), request.getWeight());
+        log.info("设置存储服务权重请求: {} -> {}", request.getStorageServiceName(), request.getWeight());
 
-        try {
-            storageStrategy.setStorageServiceWeight(request.getStorageServiceName(), request.getWeight());
-            log.info("存储服务权重设置成功");
-            return ApiResult.success("存储服务权重设置成功");
-        } catch (Exception e) {
-            log.error("设置存储服务权重失败", e);
-            return ApiResult.error(500, "设置存储服务权重失败: " + e.getMessage());
-        }
+        // 当前版本不支持设置存储服务权重
+        return ApiResult.error(400, "当前版本不支持设置存储服务权重");
     }
 
     @Operation(summary = "获取存储健康状态", description = "获取所有存储服务的健康状态")
@@ -361,46 +319,5 @@ public class StorageAdminController {
         }
 
         return info;
-    }
-
-    // ==================== 请求和响应类 ====================
-
-    @Data
-    public static class StorageBackendInfo {
-        private String name;
-        private com.jiaruiblog.quickboxserver.storage.model.StorageType type;
-        private StorageConfig config;
-        private boolean available;
-        private String healthStatus;
-        private String errorMessage;
-    }
-
-    @Data
-    public static class StrategyRequest {
-        private String strategyType;
-        private String primaryStorageService;
-        private List<String> backupStorageServices;
-        private String loadBalanceAlgorithm;
-        private Map<String, Object> additionalConfig;
-    }
-
-    @Data
-    public static class WeightRequest {
-        private String storageServiceName;
-        private long weight;
-    }
-
-    // ==================== 异常处理 ====================
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ApiResult<Void> handleIllegalArgumentException(IllegalArgumentException e) {
-        log.error("参数错误", e);
-        return ApiResult.error(400, e.getMessage());
-    }
-
-    @ExceptionHandler(Exception.class)
-    public ApiResult<Void> handleException(Exception e) {
-        log.error("服务器错误", e);
-        return ApiResult.error(500, "服务器内部错误: " + e.getMessage());
     }
 }

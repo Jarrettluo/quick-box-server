@@ -36,3 +36,6 @@ build/
 claude.md
 需求文档.md
 需求文档V2.md
+/uploads/
+/.mvn/
+/.claude/

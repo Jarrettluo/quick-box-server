@@ -1,13 +1,17 @@
 package com.jiaruiblog.quickboxserver.controller;
 
 import com.jiaruiblog.quickboxserver.common.ApiResult;
-import com.jiaruiblog.quickboxserver.model.folder.*;
+import com.jiaruiblog.quickboxserver.model.folder.FolderChunkUploadRequest;
+import com.jiaruiblog.quickboxserver.model.folder.FolderInfoResponse;
+import com.jiaruiblog.quickboxserver.model.folder.FolderUploadRequest;
+import com.jiaruiblog.quickboxserver.model.folder.FolderUploadResponse;
 import com.jiaruiblog.quickboxserver.service.folder.FolderUploadService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -16,7 +20,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import jakarta.servlet.http.HttpServletRequest;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -24,13 +27,13 @@ import java.nio.charset.StandardCharsets;
 /**
  * 文件夹上传控制器
  */
+@AllArgsConstructor
 @Slf4j
 @RestController
 @RequestMapping("/api/upload/folder")
 @Tag(name = "文件夹上传", description = "文件夹上传和管理API")
 public class FolderUploadController {
 
-    @Autowired
     private FolderUploadService folderUploadService;
 
     @Operation(summary = "初始化文件夹上传", description = "创建文件夹上传会话")
@@ -39,14 +42,12 @@ public class FolderUploadController {
             @RequestBody FolderUploadRequest request,
             HttpServletRequest httpRequest) {
         log.info("收到文件夹上传初始化请求: {}", request.getFolderName());
-
         try {
             // 验证请求
             request.validate();
 
             // 初始化上传
             FolderUploadResponse response = folderUploadService.initFolderUpload(request);
-
             // 构建下载URL
             String baseUrl = getBaseUrl(httpRequest);
             response.setDownloadUrl(baseUrl + "/api/upload/folder/download/" + response.getAccessCode());
@@ -69,19 +70,18 @@ public class FolderUploadController {
             @Parameter(description = "上传会话ID") @RequestParam("sessionId") String sessionId,
             @Parameter(description = "分片序号") @RequestParam("chunkNumber") Integer chunkNumber,
             @Parameter(description = "总分片数") @RequestParam("totalChunks") Integer totalChunks,
-            @Parameter(description = "分片大小") @RequestParam("chunkSize") Long chunkSize,
-            @Parameter(description = "当前分片大小") @RequestParam("currentChunkSize") Long currentChunkSize,
-            @Parameter(description = "总大小") @RequestParam("totalSize") Long totalSize,
-            @Parameter(description = "文件标识符") @RequestParam("identifier") String identifier,
+            @Parameter(description = "当前分片大小") @RequestParam(value = "currentChunkSize", required = false) Long currentChunkSize,
+            @Parameter(description = "分片大小（vue-simple-uploader兼容）") @RequestParam(value = "chunkSize", required = false) Long chunkSize,
             @Parameter(description = "文件名") @RequestParam("filename") String filename,
             @Parameter(description = "相对路径") @RequestParam(value = "relativePath", required = false) String relativePath,
-            @Parameter(description = "是否ZIP压缩包") @RequestParam(value = "isZipUpload", defaultValue = "false") Boolean isZipUpload,
-            @Parameter(description = "ZIP文件索引") @RequestParam(value = "zipFileIndex", required = false) Integer zipFileIndex,
-            @Parameter(description = "ZIP总分片数") @RequestParam(value = "zipTotalChunks", required = false) Integer zipTotalChunks,
-            @Parameter(description = "元数据") @RequestParam(value = "metadata", required = false) String metadata,
             @Parameter(description = "分片文件") @RequestParam("file") MultipartFile file) {
 
-        log.debug("收到文件夹分片上传请求: {} - {} ({} bytes)", sessionId, chunkNumber, currentChunkSize);
+        // 兼容 vue-simple-uploader 的 chunkSize 参数
+        if (currentChunkSize == null && chunkSize != null) {
+            currentChunkSize = chunkSize;
+        }
+
+        log.info("收到文件夹分片上传请求: {} - {} ({} bytes)", sessionId, chunkNumber, currentChunkSize);
 
         try {
             // 创建请求对象
@@ -89,16 +89,9 @@ public class FolderUploadController {
             request.setSessionId(sessionId);
             request.setChunkNumber(chunkNumber);
             request.setTotalChunks(totalChunks);
-            request.setChunkSize(chunkSize);
             request.setCurrentChunkSize(currentChunkSize);
-            request.setTotalSize(totalSize);
-            request.setIdentifier(identifier);
             request.setFilename(filename);
             request.setRelativePath(relativePath);
-            request.setIsZipUpload(isZipUpload);
-            request.setZipFileIndex(zipFileIndex);
-            request.setZipTotalChunks(zipTotalChunks);
-            request.setMetadata(metadata);
             request.setFile(file);
 
             // 验证请求
@@ -107,7 +100,7 @@ public class FolderUploadController {
             // 上传分片
             FolderUploadResponse response = folderUploadService.uploadFolderChunk(request);
 
-            log.debug("文件夹分片上传成功: {} - {} ({} bytes)", sessionId, chunkNumber, currentChunkSize);
+            log.debug("文件夹分片上传成功: {} - 分片序号：{} ({} bytes)", sessionId, chunkNumber, currentChunkSize);
             return ApiResult.success(response);
         } catch (IllegalArgumentException e) {
             log.error("文件夹分片上传参数错误", e);
@@ -115,6 +108,30 @@ public class FolderUploadController {
         } catch (Exception e) {
             log.error("文件夹分片上传失败", e);
             return ApiResult.error(500, "文件夹分片上传失败: " + e.getMessage());
+        }
+    }
+
+    // HEAD 请求用于 vue-simple-uploader 的 testChunks 功能
+    @Operation(summary = "检查分片是否存在", description = "检查文件夹分片是否已上传（用于testChunks）")
+    @RequestMapping(value = "/chunk", method = RequestMethod.HEAD)
+    public ResponseEntity<Void> checkChunkExists(
+            @Parameter(description = "上传会话ID") @RequestParam("sessionId") String sessionId,
+            @Parameter(description = "分片序号") @RequestParam("chunkNumber") Integer chunkNumber,
+            @Parameter(description = "总分片数") @RequestParam("totalChunks") Integer totalChunks,
+            @Parameter(description = "文件名") @RequestParam("filename") String filename,
+            @Parameter(description = "相对路径") @RequestParam(value = "relativePath", required = false) String relativePath) {
+        log.debug("检查分片是否存在: {} - {}", sessionId, chunkNumber);
+
+        try {
+            boolean exists = folderUploadService.checkChunkExists(sessionId, chunkNumber, relativePath, filename);
+            if (exists) {
+                return ResponseEntity.ok().build();
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            log.error("检查分片是否存在失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
@@ -164,36 +181,6 @@ public class FolderUploadController {
         } catch (Exception e) {
             log.error("获取文件夹上传进度失败", e);
             return ApiResult.error(500, "获取文件夹上传进度失败: " + e.getMessage());
-        }
-    }
-
-    @Operation(summary = "获取文件夹信息", description = "根据取件码获取文件夹信息")
-    @GetMapping("/info/{accessCode}")
-    public ApiResult<FolderInfoResponse> getFolderInfo(
-            @Parameter(description = "取件码") @PathVariable String accessCode,
-            HttpServletRequest httpRequest) {
-        log.debug("获取文件夹信息: {}", accessCode);
-
-        try {
-            // 获取文件夹信息
-            FolderInfoResponse response = folderUploadService.getFolderInfo(accessCode);
-
-            // 构建URL
-            String baseUrl = getBaseUrl(httpRequest);
-            response.setDownloadUrl(baseUrl + "/api/upload/folder/download/" + accessCode);
-
-            // 构建文件下载URL
-            if (response.getFiles() != null) {
-                for (FolderInfoResponse.FileInfo file : response.getFiles()) {
-                    file.setDownloadUrl(baseUrl + "/api/upload/folder/file/" + accessCode + "?path=" +
-                            URLEncoder.encode(file.getRelativePath(), StandardCharsets.UTF_8));
-                }
-            }
-
-            return ApiResult.success(response);
-        } catch (Exception e) {
-            log.error("获取文件夹信息失败", e);
-            return ApiResult.error(500, "获取文件夹信息失败: " + e.getMessage());
         }
     }
 
@@ -252,45 +239,10 @@ public class FolderUploadController {
         }
     }
 
-    @Operation(summary = "下载文件夹文件", description = "下载文件夹中的单个文件")
-    @GetMapping("/file/{accessCode}")
-    public ResponseEntity<InputStreamResource> downloadFolderFile(
-            @Parameter(description = "取件码") @PathVariable String accessCode,
-            @Parameter(description = "文件相对路径") @RequestParam("path") String relativePath) {
-        log.debug("下载文件夹文件: {} -> {}", accessCode, relativePath);
-
-        try {
-            // 验证取件码
-            if (!folderUploadService.validateAccessCode(accessCode)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-
-            // 下载文件
-            InputStream fileStream = folderUploadService.downloadFolderFile(accessCode, relativePath);
-
-            // 获取文件名
-            String filename = relativePath.substring(relativePath.lastIndexOf('/') + 1);
-
-            // 设置响应头
-            HttpHeaders headers = new HttpHeaders();
-            headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" +
-                    URLEncoder.encode(filename, StandardCharsets.UTF_8) + "\"");
-            headers.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE);
-
-            return ResponseEntity.ok()
-                    .headers(headers)
-                    .body(new InputStreamResource(fileStream));
-        } catch (Exception e) {
-            log.error("下载文件夹文件失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
-    }
-
     @Operation(summary = "清理过期文件夹", description = "清理所有过期的文件夹")
     @PostMapping("/cleanup")
     public ApiResult<Void> cleanupExpiredFolders() {
         log.info("清理过期文件夹");
-
         try {
             folderUploadService.cleanupExpiredFolders();
             log.info("清理过期文件夹完成");
@@ -333,36 +285,9 @@ public class FolderUploadController {
         }
     }
 
-    @Operation(summary = "生成取件码", description = "生成新的取件码")
-    @GetMapping("/generate-code")
-    public ApiResult<String> generateAccessCode() {
-        log.debug("生成取件码");
-
-        try {
-            String accessCode = folderUploadService.generateAccessCode();
-            return ApiResult.success(accessCode);
-        } catch (Exception e) {
-            log.error("生成取件码失败", e);
-            return ApiResult.error(500, "生成取件码失败: " + e.getMessage());
-        }
-    }
-
-    @Operation(summary = "获取统计信息", description = "获取文件夹上传统计信息")
-    @GetMapping("/stats")
-    public ApiResult<Object> getFolderStats() {
-        log.debug("获取文件夹统计信息");
-
-        try {
-            FolderUploadService.FolderStats stats = folderUploadService.getFolderStats();
-            return ApiResult.success(stats);
-        } catch (Exception e) {
-            log.error("获取文件夹统计信息失败", e);
-            return ApiResult.error(500, "获取文件夹统计信息失败: " + e.getMessage());
-        }
-    }
-
     /**
      * 获取基础URL
+     * 这里是后端的请求地址
      */
     private String getBaseUrl(HttpServletRequest request) {
         String scheme = request.getScheme();
@@ -380,23 +305,5 @@ public class FolderUploadController {
 
         url.append(contextPath);
         return url.toString();
-    }
-
-    /**
-     * 处理文件上传异常
-     */
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ApiResult<Void> handleIllegalArgumentException(IllegalArgumentException e) {
-        log.error("参数错误", e);
-        return ApiResult.error(400, e.getMessage());
-    }
-
-    /**
-     * 处理业务异常
-     */
-    @ExceptionHandler(Exception.class)
-    public ApiResult<Void> handleException(Exception e) {
-        log.error("服务器错误", e);
-        return ApiResult.error(500, "服务器内部错误: " + e.getMessage());
     }
 }

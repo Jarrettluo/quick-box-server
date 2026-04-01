@@ -1,5 +1,7 @@
 package com.jiaruiblog.quickboxserver.storage.model;
 
+import com.jiaruiblog.quickboxserver.exception.BusinessException;
+import com.jiaruiblog.quickboxserver.exception.ErrorCode;
 import lombok.Getter;
 
 /**
@@ -10,9 +12,7 @@ public enum StorageType {
     LOCAL("local", "本地文件系统"),
     S3("s3", "S3对象存储"),
     MINIO("minio", "MinIO对象存储"),
-    WEBDAV("webdav", "WebDAV存储"),
-    NAS("nas", "NAS存储"),
-    GPFS("gpfs", "GPFS存储");
+    WEBDAV("webdav", "WebDAV存储");
 
     private final String code;
     private final String description;
@@ -28,6 +28,6 @@ public enum StorageType {
                 return type;
             }
         }
-        throw new IllegalArgumentException("未知的存储类型: " + code);
+        throw new BusinessException(ErrorCode.UNKNOWN_STORAGE_TYPE, code);
     }
 }

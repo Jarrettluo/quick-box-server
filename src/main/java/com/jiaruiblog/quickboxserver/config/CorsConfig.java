@@ -16,7 +16,7 @@ public class CorsConfig {
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // 允许的源，可以设置为具体的前端地址或使用"*"（生产环境建议指定具体域名）
+        // 允许的源，配置为通配符（生产环境建议通过配置指定具体域名）
         config.setAllowedOriginPatterns(List.of("*"));
 
         // 允许的HTTP方法
@@ -25,8 +25,8 @@ public class CorsConfig {
         // 允许的请求头
         config.setAllowedHeaders(List.of("*"));
 
-        // 是否允许发送Cookie等凭证信息
-        config.setAllowCredentials(true);
+        // 是否允许发送Cookie等凭证信息（使用通配符origin时不能设为true）
+        config.setAllowCredentials(false);
 
         // 预检请求的有效期（秒）
         config.setMaxAge(3600L);

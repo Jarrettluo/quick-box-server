@@ -2,30 +2,61 @@
 spring:
   application:
     name: quick-box-server
+  # 文件上传配置
   servlet:
     multipart:
-      max-file-size: 100MB
-      max-request-size: 100MB
+      max-file-size: 100MB          # 单个文件最大100MB
+      max-request-size: 100MB       # 请求体最大100MB
+  # Redis 配置 (开发环境使用本地 Redis)
+  data:
+    redis:
+      host: localhost               # Redis 主机地址
+      port: 6379                    # Redis 端口
+      password: ""                  # Redis 密码（开发环境无需密码）
+      database: 0                   # Redis 数据库编号
+      timeout: 10000ms              # 连接超时时间
+      lettuce:
+        pool:
+          max-active: 8            # 最大连接数
+          max-wait: -1ms            # 最大等待时间(-1表示无限)
+          max-idle: 8               # 最大空闲连接数
+          min-idle: 0               # 最小空闲连接数
 
 server:
-  port: 8089
+  port: 8089                        # 开发服务器端口
   tomcat:
-    max-swallow-size: -1
+    max-swallow-size: -1            # 允许无限制请求体大小
 
-redis:
-  host: localhost
-  port: 16379
-  password: ""
-  database: 0
-  timeout: 10000
-  pool:
-    max-active: 8
-    max-wait: -1ms
-    max-idle: 8
-    min-idle: 0
-
+# 文件存储配置
 file:
   storage:
-    base-path: ./uploads
-    chunks-path: chunks
-    final-path: files
+    base-path: ./uploads            # 基础存储路径（相对于应用运行目录）
+    chunks-path: chunks             # 分片文件存储目录（相对于base-path）
+    final-path: files               # 最终文件存储目录（相对于base-path）
+
+# ============================================================
+# 存储配置
+# type: local 或 s3
+# ============================================================
+storage:
+  type: local                          # 存储类型：local（本地）或 s3
+  # 本地存储配置（当 type=local 时生效）
+  local:
+    base-path: ./uploads           # 基础存储路径
+    chunks-path: chunks            # 分片目录
+    final-path: files              # 最终文件目录
+    create-directories: true       # 自动创建目录
+    use-temp-files: true           # 使用临时文件
+    temp-file-prefix: quickbox_     # 临时文件前缀
+  # S3 存储配置（当 type=s3 时生效）
+  s3:
+    enabled: true                   # 是否启用 S3
+    endpoint: http://192.168.1.29:9000 # S3 端点
+    region: us-east-1
+    access-key: rag_flow
+    secret-key: infini_rag_flow
+    bucket-name: quick-box
+    path-style-access: true
+    use-ssl: false
+    prefix: uploads
+    part-size: 5242880             # 分片大小 5MB

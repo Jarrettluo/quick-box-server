@@ -87,6 +87,30 @@ services:
           memory: 1g
           cpus: '0.5'
 
+  # 前端应用服务（生产环境）
+  frontend:
+    build: ./docker/frontend
+    container_name: quickbox-frontend-prod
+    restart: always
+    volumes:
+      - frontend_build:/app/build
+    networks:
+      - quickbox-network-prod
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: '1'
+        reservations:
+          memory: 512m
+          cpus: '0.5'
+
   # Nginx 负载均衡器（生产环境）
   nginx:
     image: nginx:alpine
@@ -99,8 +123,10 @@ services:
       - ./config/nginx.prod.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/log/nginx:/var/log/nginx
+      - frontend_build:/usr/share/nginx/html:ro
     depends_on:
       - quickbox
+      - frontend
     networks:
       - quickbox-network-prod
     healthcheck:
@@ -160,7 +186,9 @@ services:
       - quickbox-network-prod
 
 # 数据卷定义（生产环境使用主机目录）
-# volumes:
+volumes:
+  frontend_build:
+    driver: local
 #   quickbox_data:
 #     driver: local
 #     driver_opts:
