@@ -612,3 +612,96 @@ MIT License - 详见 LICENSE 文件
 1. 微服务架构改造
 2. 人工智能文件处理
 3. 边缘计算支持
+
+---
+
+## 🐳 Docker 部署方案 (推荐)
+
+### 前置要求
+- Docker
+- Docker Compose
+- Redis 6.0+
+
+### 快速部署
+
+```bash
+# 1. 克隆项目 (使用 develop 分支)
+git clone -b develop https://github.com/Jarrettluo/quick-box-server.git
+cd quick-box-server
+
+# 2. 进入部署目录
+cd deploy
+
+# 3. 复制并配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，配置 Redis 密码等
+
+# 4. 启动服务
+docker-compose up -d
+
+# 5. 查看服务状态
+docker-compose ps
+
+# 6. 查看日志
+docker-compose logs -f
+```
+
+### 端口说明
+| 服务 | 端口 |
+|------|------|
+| 后端 API | 8080 |
+| Redis | 6379 |
+| 前端 Nginx | 80 (可通过 nginx 映射到 8083) |
+
+### 使用外部 Redis
+
+如果使用 Docker Compose 内置 Redis，确保 .env 中配置了 `REDIS_PASSWORD`。
+
+### 自定义配置
+
+修改 `deploy/docker-compose.yml` 中的环境变量：
+- `SPRING_PROFILES_ACTIVE`: 激活的配置 (docker/production)
+- `REDIS_HOST`: Redis 主机地址
+- `REDIS_PORT`: Redis 端口
+- `FILE_STORAGE_BASE_PATH`: 文件存储路径
+
+### 常见命令
+
+```bash
+# 启动所有服务
+docker-compose up -d
+
+# 停止所有服务
+docker-compose down
+
+# 查看日志
+docker-compose logs -f quickbox
+
+# 重启服务
+docker-compose restart quickbox
+
+# 更新并重新构建
+docker-compose build --no-cache quickbox
+docker-compose up -d
+```
+
+### 目录结构
+```
+deploy/
+├── config/              # 配置文件
+│   ├── application-docker.yml
+│   └── application-production.yml
+├── docker/              # Docker 相关
+│   ├── frontend/        # 前端构建
+│   └── nginx/           # Nginx 配置
+├── docker-compose.yml   # 开发环境 compose
+├── docker-compose.prod.yml  # 生产环境 compose
+├── .env.example         # 环境变量示例
+└── Dockerfile           # 后端镜像
+```
+
+### 生产环境建议
+- 使用生产环境 compose: `docker-compose -f docker-compose.prod.yml up -d`
+- 配置 SSL 证书
+- 设置合理的 JVM 内存参数
+- 配置日志持久化
